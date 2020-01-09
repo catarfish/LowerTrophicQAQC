@@ -1,0 +1,450 @@
+---
+title: "Lisbon_data"
+author: "Catarina Pien"
+date: "June 6, 2019"
+output: html_document
+---
+
+Clear the environment.
+```{r clear, include = FALSE}
+rm(list=ls(all=TRUE))
+```
+
+
+
+## 1.Setup and Download Libraries
+
+```{r setup, include = FALSE, warning = FALSE, message = FALSE}
+
+rm(list=ls(all=TRUE))
+
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+library(gridExtra)
+library(stringr)
+library(kableExtra)
+library(knitr)
+library(hms)
+```
+
+## 2.Load Data, Check Variable Types
+
+```{r load, include = FALSE, warning = FALSE, message = FALSE}
+setwd("C:/Users/cpien/OneDrive - California Department of Water Resources/Work/Database/R_code/")
+phys <- read_csv("Data/TblPhysicalData.csv")
+
+# Add and change data and time formats
+phys$Date<-as.Date(phys$Date,"%m/%d/%Y")
+phys$Time <- as.hms(phys$Time)
+phys$Year <- ordered(year(phys$Date))
+phys$Month <- ordered(month(phys$Date))
+mymonths <- c("Jan","Feb","Mar",
+              "Apr","May","Jun",
+              "Jul","Aug","Sep",
+              "Oct","Nov","Dec")
+#add abbreviated month name
+phys$MonthAbb <- mymonths[ phys$Month ]
+#set order of months
+phys$MonthAbb <-ordered(phys$MonthAbb,levels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
+
+```
+
+## 3.Check variables to include in QC, reorganize the data frame.
+```{r filter, include = FALSE, message = FALSE, warning = FALSE}
+
+summary(phys$PhysicalDataID)
+unique(phys$`Station Code`)
+unique(phys$Recorder) # All NA
+summary(phys$`Field Check`)
+unique(phys$Tide) # All NA
+unique(phys$DataCorrectionComments)
+unique(phys$`YSI #`)
+
+# Rename some columns, remove unnecessary columns
+phys.s <- phys %>%
+  rename(StationCode = `Station Code`,
+         WTemp = WaterTemperature,
+         Secchi = SecchiDiskDepth) %>%
+  select(-c(Recorder, `Field Check`, Crew, Tide, EnteredBy, `QA/QC'dBy`, `YSI #`,
+            LightData, DriftData, LarvalData, ZoopsData, `50_ZoopsData`, ChlData, PhytoData, NutrData,
+            Comments, DataCorrectionComments, StartMeter, EndMeter, MeterSetTime))
+
+```
+
+
+## 4. Edit "bad" data and revisualize data
+```{r Remove bad data, include= FALSE, warning = FALSE, message = FALSE}
+# Edits to data
+to_drop <- c(1575, 1631, 1632, 1722, 1724, 1867, 1308, 748)
+
+# To change
+phys.s$WTemp[phys.s$WTemp == 62] <- 16.7
+phys.s$WTemp[phys.s$WTemp == 0.169] <- 16.9
+phys.s$Turbidity[phys.s$PhysicalDataID==680] <- 15.4
+phys.s$Turbidity[phys.s$PhysicalDataID==656] <- 94.2
+phys.s$EC[phys.s$PhysicalDataID==748] <- 732
+phys.s$EC[phys.s$PhysicalDataID==926] <- 1284
+phys.s$EC[phys.s$PhysicalDataID==1847] <- 170
+phys.s$SpCnd[phys.s$PhysicalDataID==1140] <- 848
+phys.s$SpCnd[phys.s$PhysicalDataID==1139] <- 889
+phys.s$SpCnd[phys.s$PhysicalDataID==1847] <- 101
+phys.s$Secchi[phys.s$PhysicalDataID==708] <- NA
+phys.s$DO[phys.s$PhysicalDataID==1409] <- NA
+phys.s$pH[phys.s$PhysicalDataID==1501] <- 7.92
+
+phys.s$StationCode[phys.s$PhysicalDataID==1752] <- "STTD"
+phys.s$EC[phys.s$PhysicalDataID==1752] <- 530
+phys.s$SpCnd[phys.s$PhysicalDataID==1752] <- 563
+phys.s$pH[phys.s$PhysicalDataID==1752] <- 8.13
+phys.s$Turbidity[phys.s$PhysicalDataID==1752] <- 16.5
+phys.s$Tide[phys.s$PhysicalDataID==1752] <- "Ebb"
+phys.s$Date[phys.s$PhysicalDataID==1752] <-as.Date("2018-09-27", format = "%Y-%m-%d")
+
+phys.s$Time[phys.s$PhysicalDataID==401] <- as.hms("13:22:00", "%H:%m:%S")
+phys.s$Time[phys.s$PhysicalDataID==1602] <- as.hms("13:50:00", "%H:%m:%S")
+
+#add datetime
+phys.s <- phys.s%>%
+  mutate(Datetime = paste(Date, Time))
+phys.s$Datetime = as.POSIXct(phys.s$Datetime, 
+                           format = "%Y-%m-%d %H:%M:%S")
+
+# Remove rows with no data
+phys.s <- phys.s%>%
+  filter(!PhysicalDataID %in% to_drop)
+
+```
+
+
+## 4a) Plot edited YBFMP/Fall Flow data
+
+```{r Plots Overview, echo = FALSE, message = FALSE, warning = FALSE}
+p.temp <- ggplot(phys.s, aes(Date, WTemp)) + geom_point() + labs(y = "Water Temp(C)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.secchi <- ggplot(phys.s, aes(Date, Secchi)) + geom_point() + labs(y = "Secchi Depth(m)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.ec <- ggplot(phys.s, aes(Date, EC)) + geom_point() + labs(y = "EC(useimens/cm)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.spc <- ggplot(phys.s, aes(Date, SpCnd)) + geom_point() + labs(y = "SpCnd(useimens/cm)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.pH <- ggplot(phys.s, aes(Date, pH)) + geom_point() + labs(y = "pH") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.do <- ggplot(phys.s, aes(Date, DO)) + geom_point() + labs(y = "DO(mg/L)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.turb <- ggplot(phys.s, aes(Date, Turbidity)) + geom_point() + labs(y = "Turbidity(NTU)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+
+# Arrange plots together
+grid.arrange(p.temp, p.ec, p.spc, p.secchi, p.turb, p.do, p.pH)
+```
+
+## 5.Separate into separate datasets: Yolo, LIS, SHR, STTD, Fall Flow (FF), YTR, CCS, KNA 
+
+```{r Station datasets, include = FALSE, message = FALSE, warning = FALSE}
+phys_CCS <- phys.s %>%
+  filter(StationCode == "CCS")
+
+phys_KNA <- phys.s %>%
+  filter(StationCode == "KNA")
+
+phys_Yolo <- phys.s%>%
+  filter(StationCode == "STTD" | StationCode == "LIS" | StationCode == "SHR")
+
+phys_STTD <- phys.s %>%
+  filter(StationCode == "STTD")
+
+phys_SHR <- phys.s%>%
+  filter(StationCode == "SHR")
+
+phys_LIS <- phys.s%>%
+  filter(StationCode == "LIS")
+
+phys_YTR <- phys.s %>%
+  filter(str_detect(StationCode, "^YTR"))
+
+phys_FF <- phys.s %>%
+  filter(StationCode != "STTD" & StationCode != "SHR" & StationCode != "LIS" & StationCode != "CCS" & StationCode !="KNA") %>%
+  filter(!str_detect(StationCode, "^YTR"))
+
+```
+
+## 6. Look at summary tables - Min and max of variables by station
+
+```{r minmaxtables, message = FALSE, warning = FALSE}
+
+# All database data
+WQ.overall <- phys.s %>%
+  summarize(min.temp = min(WTemp, na.rm=T),
+            max.temp = max(WTemp, na.rm=T),
+            min.EC = min(EC, na.rm=T),
+            max.EC = max(EC,na.rm=T),
+            min.SPC = min(SpCnd,na.rm=T),
+            max.SPC = max(SpCnd,na.rm=T),
+            min.Secchi = min(Secchi,na.rm=T),
+            max.Secchi = max(Secchi,na.rm=T),
+            min.Turbidity = min(Turbidity,na.rm=T),
+            max.Turbidity = max(Turbidity,na.rm=T),
+            min.pH = min(pH,na.rm=T),
+            max.pH = max(pH,na.rm=T),
+            min.DO = min(DO,na.rm=T),
+            max.DO = max(DO,na.rm=T),
+            n = n()) 
+
+WQ1.sum <- phys.s %>%
+  group_by(StationCode) %>%
+  summarize(min.temp = min(WTemp, na.rm=T),
+            max.temp = max(WTemp, na.rm=T),
+            min.EC = min(EC, na.rm=T),
+            max.EC = max(EC,na.rm=T),
+            min.SPC = min(SpCnd,na.rm=T),
+            max.SPC = max(SpCnd,na.rm=T),
+            n = n())
+
+WQ2.sum <- phys.s %>%
+  group_by(StationCode) %>%
+  summarize(min.Secchi = min(Secchi,na.rm=T),
+            max.Secchi = max(Secchi,na.rm=T),
+            min.Turbidity = min(Turbidity,na.rm=T),
+            max.Turbidity = max(Turbidity,na.rm=T),
+            min.pH = min(pH,na.rm=T),
+            max.pH = max(pH,na.rm=T),
+            min.DO = min(DO,na.rm=T),
+            max.DO = max(DO,na.rm=T),
+            n = n())
+
+kable(WQ.overall) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+kable(WQ1.sum) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+kable(WQ2.sum) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+```
+
+
+## 6. Check against Lisbon data
+
+#### Yolo
+```{r Lisbon Check Yolo, echo = FALSE, message = FALSE, warning = FALSE}
+setwd("C:/Users/cpien/OneDrive - California Department of Water Resources/Work/Database/R_code/")
+#Sensors
+  #Water Temp in F =25  (2008)
+  #DO= 61  (2013)
+  #EC = 100  (2013)
+  #pH =62   (2013)
+  #Turbidity =27  (2013)
+
+# Read files (came from cdec4gov)
+LIS_WTemp <- read_csv("Data/STA/LIS_25.csv")
+LIS_DO <- read_csv("Data/STA/LIS_61.csv")
+LIS_pH <- read_csv("Data/STA/LIS_62.csv")
+LIS_Turb <- read_csv("Data/STA/LIS_27.csv")
+LIS_EC <- read_csv("Data/STA/LIS_100.csv")
+
+# Make edits and select just the relevant columns
+LIS_WTemp_ed <- LIS_WTemp %>%
+  select(5,6) %>%
+  filter(VALUE<99998) %>% # Remove these non-values
+  mutate(Temp_C = round((VALUE-32)*5/9,1)) #Change to Celsius
+LIS_DO_ed <- LIS_DO %>%
+  select(5,6) %>%
+  rename("DO" = VALUE)
+LIS_pH_ed <- LIS_pH %>%
+  select(5,6) %>%
+  rename("pH" = VALUE)
+LIS_Turb_ed <- LIS_Turb %>%
+  select(5,6) %>%
+  rename("Turbidity" = VALUE)
+LIS_EC_ed <- LIS_EC%>%
+  select(5,6) %>%
+  rename(EC = "VALUE")
+
+# Merge variables together (2 at a time!)
+a <- merge(LIS_DO_ed, LIS_Turb_ed, by = "DATE TIME")
+b <- merge(a, LIS_EC_ed, by = "DATE TIME")
+c <- merge(b, LIS_pH_ed, by = "DATE TIME")
+LIS_WQ <- left_join(LIS_WTemp_ed, c, by = "DATE TIME")
+
+# Add some date time variables for filtering
+LIS_WQ$Time <- strftime(LIS_WQ$`DATE TIME`, format = "%H:%M:%S")
+LIS_WQ$Date <- as.Date(LIS_WQ$`DATE TIME`)
+LIS_WQ$Hour <- as.numeric(format(strptime(LIS_WQ$Time, "%H:%M:%S"), "%H"))
+
+# Edit merged table with the tiniest of QC
+LIS_WQ_f <- LIS_WQ %>%
+  rename(Datetime = `DATE TIME`,
+         WTemp = Temp_C) %>%
+  filter(Hour>06 & Hour<15)%>%
+  filter(WTemp>0 & WTemp<40) %>%
+  filter(EC>0) %>%
+  filter(DO>0) %>%
+  filter(pH>0 & pH<14) %>%
+  filter(Turbidity >0) %>%
+  mutate(StationCode="LIS_RT") %>%
+  select(1,3:9,11)
+
+# Plot each variable (LIS alone)
+Temp <- ggplot(LIS_WQ_f, aes(Datetime, WTemp)) + geom_point() + theme_bw()
+DO <- ggplot(LIS_WQ_f, aes(Datetime, DO)) + geom_point() + theme_bw()
+pH <- ggplot(LIS_WQ_f, aes(Datetime, pH)) + geom_point() + theme_bw()
+Turb <- ggplot(LIS_WQ_f, aes(Datetime, Turbidity)) + geom_point() + theme_bw()
+EC <- ggplot(LIS_WQ_f, aes(Datetime, EC)) + geom_point() + theme_bw()
+
+grid.arrange(Temp, DO, pH, Turb, EC, nrow = 2)
+
+# Bring Yolo data in, arrange columns in the same way so we can bind
+Yolo_WQ <- phys_Yolo %>%
+  select(Datetime,WTemp, DO, Turbidity, EC, pH, Time, Date, StationCode)
+
+WQ_large <- rbind(LIS_WQ_f, Yolo_WQ)
+WQ_large$Year <- as.numeric(year(WQ_large$Date))
+WQ_sub <- WQ_large %>%
+  filter(Year>2001)
+WQ_sub2 <- WQ_large %>%
+  filter(Year>2006)
+WQ_sub3 <- WQ_large %>%
+  filter(Year>2010)
+
+# Plot with LIS (blue) and Yolo (other light colors)
+ggplot(WQ_large, aes(Datetime, WTemp,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF", "#106E83", "#FFC971", "#BAFF87")) + 
+  labs(title = "Water Temperature")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub, aes(Datetime, EC,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF", "#106E83", "#FFC971", "#BAFF87")) + 
+  labs(title = "EC")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub2, aes(Datetime, DO, colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF", "#106E83", "#FFC971", "#BAFF87")) + 
+  labs(title = "DO")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub2, aes(Datetime, pH,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF", "#106E83", "#FFC971", "#BAFF87")) + 
+  labs(title = "pH")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub3, aes(Datetime, Turbidity,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF", "#106E83", "#FFC971", "#BAFF87")) + 
+  labs(title = "Turbidity")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+```
+
+#### Fall Flow
+```{r Lisbon Check Fall Flow, echo = FALSE, message = FALSE, warning = FALSE}
+FF_WQ <- phys_FF %>%
+  select(Datetime,WTemp, DO, Turbidity, EC, pH, Time, Date, StationCode)
+
+WQ_large_FF <- rbind(LIS_WQ_f, FF_WQ)
+WQ_large_FF$Year <- as.numeric(year(WQ_large_FF$Date))
+WQ_sub_FF <- WQ_large_FF %>%
+  filter(Year>2001)
+WQ_sub2_FF <- WQ_large_FF %>%
+  filter(Year>2006)
+WQ_sub3_FF <- WQ_large_FF %>%
+  filter(Year>2011)
+
+ggplot(WQ_large_FF, aes(Datetime, WTemp,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF","#FFC971", "#FA8FFF", "#62FF62","#030C5C","#EFFF4F","#FFE4EA", "#E3B5FF" ,"#B5D7FF", "#B5FFFF", "#C2C1CB", "#C2C1CB")) +  
+  labs(title = "Water Temperature")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub3_FF, aes(Datetime, EC,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF","#FFC971", "#FA8FFF", "#62FF62","#030C5C","#EFFF4F","#FFE4EA", "#E3B5FF" ,"#B5D7FF", "#B5FFFF", "#C2C1CB", "#C2C1CB")) + 
+  labs(title = "EC")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub3_FF, aes(Datetime, DO, colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF","#FFC971", "#FA8FFF", "#62FF62","#030C5C","#EFFF4F","#FFE4EA", "#E3B5FF" ,"#B5D7FF", "#B5FFFF", "#C2C1CB", "#C2C1CB")) +  
+  labs(title = "DO")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub3_FF, aes(Datetime, pH,colour = StationCode)) + geom_point() + theme_bw() +
+ scale_colour_manual(values = c("#F3B2FF","#FFC971", "#FA8FFF", "#62FF62","#030C5C","#EFFF4F","#FFE4EA", "#E3B5FF" ,"#B5D7FF", "#B5FFFF", "#C2C1CB", "#C2C1CB")) + 
+  labs(title = "pH")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub3_FF, aes(Datetime, Turbidity,colour = StationCode)) + geom_point() + theme_bw() +
+   scale_colour_manual(values = c("#F3B2FF","#FFC971", "#FA8FFF", "#62FF62","#030C5C","#EFFF4F","#FFE4EA", "#E3B5FF" ,"#B5D7FF", "#B5FFFF", "#C2C1CB", "#C2C1CB")) + 
+  labs(title = "Turbidity")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+```
+

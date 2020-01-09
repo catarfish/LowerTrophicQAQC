@@ -1,0 +1,419 @@
+---
+title: "Drift_QAQC"
+author: "Catarina Pien"
+date: "May 23, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r set-options, echo=FALSE, cache=FALSE}
+
+options(width = 10000)
+```
+
+## 1.Setup and Download Libraries
+
+```{r setup, results=FALSE, warning = FALSE, message = FALSE}
+
+rm(list=ls(all=TRUE))
+
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+library(gridExtra)
+library(stringr)
+
+```
+
+## 2.Load Data, Check Variable Types
+
+```{r load, results = FALSE, warning = FALSE, message = FALSE}
+# Load data - several tables
+setwd("C:/Users/cpien/OneDrive - California Department of Water Resources/Work/Database/R_code/")
+phys <- read_csv("Data/QC/LT_phys_qc.csv")
+inv_catch <- read_csv("Data/TblInvertCatchData.csv")
+inv_ref <- read_csv("Data/TblInvertebrates.csv")
+inv_tax <- read_csv("Data/Drift_Taxonomy.csv")
+inv_tax_2 <- read_csv("Data/TblInvertsLookUpV2.csv")
+
+# Add and change date formats
+phys$SampleDate<-as.Date(phys$SampleDate,"%m/%d/%Y")
+phys$Year <- ordered(year(phys$SampleDate))
+phys$Month <- ordered(month(phys$SampleDate))
+phys$MonthAbb <-ordered(phys$MonthAbb,levels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
+phys$Datetime = as.POSIXct(phys$Datetime, 
+                           format = "%Y-%m-%d %H:%M:%S")
+
+# str(phys)
+# str(zoop)
+```
+
+## 3.Check variables
+```{r filter, results = FALSE, message = FALSE, warning = FALSE}
+
+
+```
+
+## 4. Make changes that need to be made to data
+```{r Changes to data, message = FALSE, warning = FALSE}
+haplo <- c(3,6,90)
+tromb <- c(123,146)
+inv_tax_2$Phylum[inv_tax_2$Phylum=="Anthropoda"] <- "Arthropoda"
+inv_tax_2$Class[inv_tax_2$Class=="Hirudinea"] <- "Clitellata"
+inv_tax_2$Order[inv_tax_2$OrganismID%in%haplo] <- "Crassiclitellata"
+inv_tax_2$Order[inv_tax_2$OrganismID == 2] <- "Enchytraeida"
+inv_tax_2$Order[inv_tax_2$Order=="Canipalpata"] <- "Sabellida"
+inv_tax_2$Order[inv_tax_2$OrganismID==155] <- "Oribatida"
+inv_tax_2$Order[inv_tax_2$OrganismID%in%tromb] <- "Trombidiformes"
+inv_tax_2$Order[inv_tax_2$Order=="Veneroida"] <- "Sphaeriida"
+inv_tax_2$Order[inv_tax_2$Order=="Basommatophora"] <- "Hygrophila"
+inv_tax_2$Order[inv_tax_2$Order=="Veneoida"] <- "Venerida"
+inv_tax_2$Order[inv_tax_2$Order=="Araneida"] <- "Araneae"
+inv_tax_2$Family[inv_tax_2$Family=="Diplura"] <- "Dipluridae"
+
+
+
+inv_tax_2$OrganismID[inv_tax_2$OrganismID==65] <- 71
+inv_tax_2$OrganismID[inv_tax_2$OrganismID==75] <- 143
+inv_tax_2$OrganismID[inv_tax_2$OrganismID==5] <- 4
+inv_tax_2$OrganismID[inv_tax_2$OrganismID==70] <- 157
+inv_tax_2$OrganismID[inv_tax_2$OrganismID==136] <- 57
+inv_tax_2$OrganismID[inv_tax_2$OrganismID==139] <- 126
+inv_tax_2$OrganismID[inv_tax_2$OrganismID==105] <- 144
+inv_tax_2$OrganismID[inv_tax_2$OrganismID==151] <- 135
+inv_tax_2$OrganismID[inv_tax_2$OrganismID==155] <- 125
+
+inv_catch$OrganismID[inv_catch$OrganismID==65] <- 71
+inv_catch$OrganismID[inv_catch$OrganismID==75] <- 143
+inv_catch$OrganismID[inv_catch$OrganismID==5] <- 4
+inv_catch$OrganismID[inv_catch$OrganismID==70] <- 157
+inv_catch$OrganismID[inv_catch$OrganismID==136] <- 57
+inv_catch$OrganismID[inv_catch$OrganismID==139] <- 126
+inv_catch$OrganismID[inv_catch$OrganismID==105] <- 144
+inv_catch$OrganismID[inv_catch$OrganismID==151] <- 135
+inv_catch$OrganismID[inv_catch$OrganismID==155] <- 125
+
+inv_tax_2$Family[inv_tax_2$Family=="Taltridae"] <- "Taltriidae"
+inv_tax_2$Family[inv_tax_2$Family=="Nereidae"] <- "Nereididae"
+
+
+```
+
+## 5. Merge data tables, calculate CPUE, rearrange variables
+```{r cpue, message = FALSE, warning = FALSE}
+# Merge datasets for CPUE variables
+tax <- full_join(inv_tax, inv_tax_2, by = "OrganismID")
+catch_inv0 <- right_join(inv_ref, inv_catch, by = "InvertDataID")
+catch_inv <- left_join(catch_inv0, tax, by = "OrganismID") %>%
+  arrange(OrganismID)
+
+# Merge physical data
+inv_all_0 <- right_join(phys,catch_inv, by = "PhysicalDataID")
+#inv_all_1 <- left_join(inv_all_0, yb_tax, by = "OrganismID")
+
+# Add CPUE
+inv_all_1 <- inv_all_0 %>%
+  mutate(CPUE= ifelse(FlowMeterSpeed == "Regular", 
+                      round(Count/((0.4572*0.25)/(4*(((DriftEndMeter-DriftStartMeter) * 26873)/999999))),3),
+                      ifelse(FlowMeterSpeed == "Low", 
+                      round(Count/((0.4572*0.25)/(4*(((DriftEndMeter-DriftStartMeter) * 57560)/999999))),3),NA)))
+
+# Rename some columns, remove unnecessary columns
+inv_all_2 <- inv_all_1 %>%
+   select(-c(X1, PhysicalDataID, MicrocystisVisualRank, MonthAbb, Datetime, InvertDataID, 
+             StartTime,StopTime,DriftStartMeter,DriftEndMeter,FlowMeterSpeed, FieldComments, EnteredBy, `QA/QC'dBy`,
+             InvertCode.x, SampleVolume, InvertCatchID, InvertCode.y, Classification, Phylum.y,
+             Order, Family, Class.y, Order.y, Family.y,Species.y,
+             Larvae, Pupae, Nymphs, Emergents, Adults, X14, Kingdom)) 
+
+```
+
+
+## 5a. Public
+```{r}
+
+Yolo <- c("STTD", "SHR")
+# EDI/Public
+inv_all_2$SampleDate <- format(inv_all_2$SampleDate, "%D")
+
+inv_edi_catch <- inv_all_2 %>%
+  filter(StationCode %in% Yolo) %>%
+  rename(Phylum = Phylum.x, 
+         Order = Order.x,
+         Family = Family.x,
+         Species = Species.x,
+         Class = Class.x,
+         GearConditionCode = ConditionCode) %>%
+  select(c(SampleDate, SampleTime, Year, Month, StationCode, GearConditionCode,
+           WeatherCode, WaterTemperature, Secchi, Turbidity,
+           Conductivity, SpCnd, pH, DO, Category,
+           Phylum, Subphylum, Class, Subclass, Infraclass,
+           Superorder, Order, Suborder, Infraorder, Superfamily, Family, Genus, Species,
+          TaxonName, TaxonRank, Count, CPUE, OrganismID)) %>%
+  drop_na(CPUE, OrganismID) %>%
+  arrange(Year, Month, SampleDate, SampleTime, Phylum, Subphylum, Class, Subclass, Infraclass,
+           Superorder, Order, Suborder, Infraorder, Superfamily, Family, Genus, Species)
+  
+write.csv(inv_edi_catch,"R_write/yolo_drift_public.csv")
+```
+
+
+## 6.Overview of data: Organisms
+
+```{r Organisms Plot, echo = FALSE, message = FALSE, warning = FALSE}
+# CPUE dataframe
+zoop_cpue <- zoop_all %>%
+  gather(`150_CPUE`, `50_CPUE`, key = "NetType", value = "CPUE")
+
+# Make some datasets
+calanoid <- zoop_cpue %>% filter(Order == "Calanoida")
+cladocera <- zoop_cpue %>% filter(Order == "Cladocera")
+cyclopoid <- zoop_cpue %>% filter(Order == "Cyclopoida")
+macro <- zoop_cpue %>% filter(Classification == "Macrozooplankton")
+micro <- zoop_cpue %>% filter(Classification == "Microzooplankton & Nauplii")
+
+# Look at organisms - CPUE 
+ggplot(zoop_cpue, aes(x=Classification, y = CPUE, fill =NetType)) + 
+  geom_col(position = "dodge") +
+    scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) + labs(title = "Classification")+
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+```
+
+
+```{r Organisms Plot big, warning = FALSE, message = FALSE, fig.width=12, fig.height=16}
+
+# Look at each taxonomic category
+t1 <- ggplot(zoop_cpue, aes(x=Phylum, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="Sum CPUE by Phylum") +
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+t2 <- ggplot(zoop_cpue, aes(x=Class, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="Sum CPUE by Class") +
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+t3 <- ggplot(zoop_cpue, aes(x=Subclass, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="Sum CPUE by SubClass") +
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+zoop_order <- zoop_cpue %>%
+  filter(!is.na(Order))
+t4 <- ggplot(zoop_order, aes(x=Order, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="CPUE by Order") +
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+zoop_family <- zoop_cpue %>%
+  filter(!is.na(Family))
+t5 <- ggplot(zoop_family, aes(x=Family, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="CPUE by Family") +
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 9), axis.title = element_text(size = 11),axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+zoop_genus <- zoop_cpue %>%
+  filter(!is.na(Genus))
+t6 <- ggplot(zoop_genus, aes(x=Genus, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="CPUE by Genus") +
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 8), axis.title = element_text(size = 11),axis.title.x = element_blank(),axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+# Compare changes: Organism vs.Taxon
+# Calanoid species
+org1 <- ggplot(calanoid, aes(x=Organism, y = CPUE, fill = NetType)) + 
+  geom_col(position = "stack") + labs(title = "Calanoid - Organism") +  
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+tax1 <- ggplot(calanoid, aes(x=Taxon, y = CPUE, fill = NetType)) + 
+  geom_col(position = "stack") + labs(title = "Calanoid - Taxon") +  
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+# Cladocera species
+org2 <- ggplot(cladocera, aes(x=Organism, y = CPUE, fill = NetType)) + 
+  geom_col(position = "stack") +
+  labs(title = "Cladocera - Organism")+
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+tax2 <- ggplot(cladocera, aes(x=Taxon, y = CPUE, fill = NetType)) + 
+  geom_col(position = "stack") +
+  labs(title = "Cladocera - Taxon")+
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1)) 
+# Cyclopoid species
+org3 <- ggplot(cyclopoid, aes(x=Organism, y = CPUE, fill = NetType)) + 
+  geom_col(position = "stack") +
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  labs(title = "Cylopoid - Organism")+
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+tax3 <- ggplot(cyclopoid, aes(x=Taxon, y = CPUE, fill = NetType)) + 
+  geom_col(position = "stack") +
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  labs(title = "Cylopoid - Taxon")+
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+# Macrozooplankton
+org4 <- ggplot(macro, aes(x=Organism, y = CPUE, fill = NetType)) + 
+  geom_col(position = "stack") +
+  labs(title = "Macrozooplankton - Organism")+
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1))
+
+tax4 <- ggplot(macro, aes(x=Taxon, y = CPUE, fill = NetType)) + 
+  geom_col(position = "stack") +
+  labs(title = "Macrozooplankton - Taxon")+
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Microzooplankton
+org5 <- ggplot(micro, aes(x=Organism, y = CPUE, fill = NetType)) + 
+  geom_col(position = "stack") +
+  labs(title = "Microzooplankton - Organism")+
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1))
+
+tax5 <- ggplot(micro, aes(x=Taxon, y = CPUE, fill = NetType)) + 
+  geom_col(position = "stack") +
+  labs(title = "Microzooplankton - Taxon")+
+  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
+                     axis.text.x = element_text(angle = 90, hjust = 1))
+
+grid.arrange(t1, t2, t3, t4, t5, t6, ncol = 2)
+grid.arrange(org1, org2, org3, org4, org5, ncol = 2)
+grid.arrange(tax1, tax2, tax3, tax4, tax5, ncol = 2)
+```
+
+## 7. Look at Flowmeter data
+
+```{r Flow, message = FALSE, warning = FALSE}
+# Calculate flow difference
+
+# Continue by combining 150-50 net into one column, then removing those rows with no flow value
+Flow <- zoop_all %>%
+    gather(`150_Flowdiff`, `50_Flowdiff`, key="NetType", value="Flowdiff") %>%
+  gather(`150_SetTime`, `50_SetTime`, key = "Net Type", value = "SetTime") %>%
+filter(!is.na(Flowdiff)) %>%
+filter(!is.na(FlowMeterSpeed))
+
+# Plot by flowmeter type
+par(mfrow = c(1,2))
+plot(Flow$Flowdiff[Flow$NetType == "150_Flowdiff"], main = "150_net") # Plot of all points
+plot(Flow$Flowdiff[Flow$NetType == "50_Flowdiff"], main = "50_net") # Plot of all points
+
+# Histogram by net type
+ggplot(Flow, aes(Flowdiff)) + geom_histogram(binwidth = 500) +
+  facet_wrap(~NetType) + theme_bw()
+
+# Looking at flow by net type and flowmeter speed
+ggplot(Flow, aes(SetTime, Flowdiff, col = FlowMeterSpeed)) + 
+  geom_point(alpha = 0.05) + 
+  facet_grid(cols = vars(NetType)) + theme_bw()
+
+# Look at flow values by month
+Flow_yr_month <- Flow %>%
+  group_by(NetType, Year, MonthAbb) %>%
+  select(NetType,Year,MonthAbb,Flowdiff) %>%
+  summarize(max.flow = max(Flowdiff),
+            median.flow = median(Flowdiff),
+            min.flow = min(Flowdiff))
+
+# Look at flow values by month
+Flow_month <- Flow %>%
+  group_by(NetType,MonthAbb) %>%
+  summarize(max.flow = max(Flowdiff),
+            median.flow = median(Flowdiff),
+            min.flow = min(Flowdiff))
+
+# Flow plots
+
+ggplot(Flow, aes(MonthAbb, Flowdiff)) + geom_boxplot(fill = "#26bb11") + labs(title = "Boxplot: All Flows") + theme_bw() + facet_wrap(~NetType)
+
+ggplot(Flow_yr_month, aes(MonthAbb, median.flow)) + geom_boxplot(fill = "#00acee") + 
+  facet_wrap(~NetType) +labs(title = "Boxplot: Median flow over multiple years") + theme_bw()
+
+# Look at flow values by station
+Flow_sta <- Flow %>%
+  group_by(StationCode, MonthAbb, NetType) %>%
+  summarize(max.flow = max(Flowdiff),
+            median.flow = median(Flowdiff),
+            min.flow = min(Flowdiff)) %>%
+  filter(StationCode %in% c("STTD", "SHR", "LIS"))
+
+# write.csv(Flow_yr_month, "R_write/Flow_yr_month.csv")
+# write.csv(Flow_sta, "R_write/Flow_sta.csv")
+# write.csv(Flow_month, "R_write/Flow_month.csv")
+
+ggplot(Flow, aes(StationCode, Flowdiff)) +geom_boxplot() + labs(title = "Flow by station") + theme_bw()
+ggplot(Flow_sta, aes(MonthAbb, median.flow, col = StationCode, shape = NetType)) + geom_point(size = 4) + theme_bw() +
+  labs(title = "Median flow by station and month")
+
+
+# List of all flow diferences by station and date
+Flow_sta_comments <- Flow %>%
+  filter(StationCode %in% c("STTD", "SHR", "LIS")) %>%
+  select(ZoopsDataID, StationCode, Year, Date, MonthAbb, NetType, Flowdiff, FieldComments) %>%
+  group_by(ZoopsDataID, StationCode, NetType,Year, Date, MonthAbb, Flowdiff, FieldComments) %>%
+  arrange(StationCode,NetType,Year,Date,Flowdiff) %>%
+  distinct(Date,StationCode)
+
+FlowMeterCheck <- zoop_all %>%
+  filter(StationCode %in% c("SHR", "STTD")) %>%
+  filter(`50_Flowdiff` < 2000) %>%
+  select(c(PhysicalDataID, ZoopsDataID, Date, StationCode, 
+           FlowMeterSpeed, Organism, `150_CPUE`, `50_CPUE`, 
+           `150_Flowdiff`, `50_Flowdiff`, `150_SetTime`, `50_SetTime`)) %>%
+  group_by(StationCode, FlowMeterSpeed) %>%
+  mutate(`150_std` = `150_Flowdiff`/`150_SetTime` *10,
+            `50_std` = `50_Flowdiff`/`50_SetTime` * 10)
+
+ggplot(FlowMeterCheck, aes(`150_std`, `50_std`, col = FlowMeterSpeed)) + geom_point() + geom_smooth() + 
+  scale_continuous + 
+  theme_bw()
+
+
+```
+
+## 8. Calculate summary stats and IQR for flowmeter readings
+```{r IQR Flowmeter}
+
+# Calculate median, MAD, lower and upper ranges for each day
+Flow.sum <- Flow %>%
+  filter(StationCode == "STTD" | StationCode == "SHR" | StationCode == "LIS") %>%
+  group_by(StationCode, NetType, FlowMeterSpeed) %>%
+   summarize(min.Flowdiff = min(Flowdiff),
+             max.Flowdiff = max(Flowdiff))
+
+# Calculate median, MAD, lower and upper ranges for each day
+Flow.IQR <- Flow %>%
+  filter(StationCode == "STTD" | StationCode == "SHR" | StationCode == "LIS") %>%
+  group_by(StationCode, NetType, FlowMeterSpeed) %>%
+   summarize(Q1 = quantile(Flowdiff, probs = 0.25), 
+            Q3 = quantile(Flowdiff, probs = 0.75),
+            IQR = Q3-Q1,
+            ul = Q3 + 1.5 * IQR,
+            ll = Q1 - 1.5 * IQR)
+kable(Flow.sum) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+kable(Flow.IQR) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+```
+

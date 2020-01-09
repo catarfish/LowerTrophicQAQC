@@ -1,0 +1,2582 @@
+---
+title: "LowerTrophic_QAQC"
+author: "Catarina Pien"
+date: "May 3, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r set-options, echo=FALSE, cache=FALSE}
+
+options(width = 10000)
+rm(list=ls(all=TRUE))
+```
+
+## 1.Setup and Download Libraries
+
+```{r setup, results=FALSE, warning = FALSE, message = FALSE}
+
+rm(list=ls(all=TRUE))
+
+library(tidyverse)
+library(readr)
+library(lubridate)
+library(hms)
+library(gridExtra)
+library(stringr)
+library(kableExtra)
+library(knitr)
+
+```
+
+## 2.Load Data, Check Variable Types
+
+```{r load, results = FALSE, warning = FALSE, message = FALSE}
+setwd("C:/Users/cpien/OneDrive - California Department of Water Resources/Work/Database/R_code/")
+phys <- read.csv("Data/TblPhysicalData.csv")
+# inv <- read_csv("Data/TblInvertCatchData.csv")
+# inv.ref <- read_csv("Data/TblInvertebrates.csv")
+
+# Add and change data and time formats
+phys <- phys %>% mutate(Datetime = paste(Date, Time, sep = " "))
+
+phys$Datetime <-  as.POSIXct(phys$Datetime, format = "%m/%d/%Y %H:%M")
+phys$Date<-as.Date(phys$Date,"%m/%d/%Y")
+phys$Time2 <- as.hms(phys$Datetime, "%H:%M", tz = "America/Los_Angeles")
+phys$Year <- ordered(year(phys$Date))
+phys$Month <- ordered(month(phys$Date))
+mymonths <- c("Jan","Feb","Mar",
+              "Apr","May","Jun",
+              "Jul","Aug","Sep",
+              "Oct","Nov","Dec")
+phys$Tide <- as.factor(phys$Tide)
+#add abbreviated month name
+phys$MonthAbb <- mymonths[ phys$Month ]
+#set order of months
+phys$MonthAbb <-ordered(phys$MonthAbb,levels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
+# str(phys)
+```
+
+## 3.Check variables to include in QC, reorganize the data frame.
+```{r filter, results = FALSE, message = FALSE, warning = FALSE}
+
+summary(phys$PhysicalDataID)
+unique(phys$Station.Code)
+unique(phys$Recorder) # All NA
+summary(phys$`Field Check`)
+unique(phys$Tide) # All NA
+unique(phys$DataCorrectionComments)
+
+# Rename some columns, remove unnecessary columns
+phys.s <- phys %>%
+  rename(Secchi = SecchiDiskDepth,
+         StationCode = Station.Code,
+         Conductivity = EC, 
+         SampleDate = Date,
+         SampleTime = Time2) %>%
+  select(-c(Recorder, Field.Check, Crew, EnteredBy, QA.QC.dBy, YSI.., Time, 
+            LightData, DriftData, LarvalData, ZoopsData, X50_ZoopsData, ChlData, PhytoData, NutrData,
+            Comments, DataCorrectionComments, StartMeter, EndMeter, MeterSetTime))
+
+```
+
+## 4.Overview of Physical Data (All stations)
+
+```{r WQ Plot, message = FALSE, warning = FALSE}
+
+p.temp <- ggplot(phys.s, aes(SampleDate, WaterTemperature)) + geom_point() + labs(y = "Water Temp(C)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.secchi <- ggplot(phys.s, aes(SampleDate, Secchi)) + geom_point() + labs(y = "Secchi Depth(m)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.ec <- ggplot(phys.s, aes(SampleDate, Conductivity)) + geom_point() + labs(y = "EC(useimens/cm)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.spc <- ggplot(phys.s, aes(SampleDate, SpCnd)) + geom_point() + labs(y = "SpCnd(useimens/cm)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.pH <- ggplot(phys.s, aes(SampleDate, pH)) + geom_point() + labs(y = "pH") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.do <- ggplot(phys.s, aes(SampleDate, DO)) + geom_point() + labs(y = "DO(mg/L)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.turb <- ggplot(phys.s, aes(SampleDate, Turbidity)) + geom_point() + labs(y = "Turbidity(NTU)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+
+# Arrange plots together
+grid.arrange(p.temp, p.ec, p.spc, p.secchi, p.turb, p.do, p.pH)
+
+```
+
+## 5. Edit "bad" data and revisualize data
+```{r Remove bad data, warning = FALSE, message = FALSE}
+# Edits to data
+to_drop <- c(1575, 1631, 1632, 1722, 1724, 1867, 1308, 748)
+
+# To change
+phys.s$WaterTemperature[phys.s$WaterTemperature == 62] <- 16.7
+phys.s$WaterTemperature[phys.s$WaterTemperature == 0.169] <- 16.9
+phys.s$Turbidity[phys.s$PhysicalDataID==680] <- 15.4
+phys.s$Turbidity[phys.s$PhysicalDataID==656] <- 94.2
+phys.s$Conductivity[phys.s$PhysicalDataID==748] <- 732
+phys.s$Conductivity[phys.s$PhysicalDataID==926] <- 1284
+phys.s$Conductivity[phys.s$PhysicalDataID==1847] <- 170
+phys.s$SpCnd[phys.s$PhysicalDataID==1140] <- 848
+phys.s$SpCnd[phys.s$PhysicalDataID==1139] <- 889
+phys.s$SpCnd[phys.s$PhysicalDataID==1847] <- 101
+phys.s$Secchi[phys.s$PhysicalDataID==708] <- NA
+phys.s$DO[phys.s$PhysicalDataID==1409] <- NA
+phys.s$pH[phys.s$PhysicalDataID==1501] <- 7.92
+phys.s$pH[phys.s$PhysicalDataID==1752] <- 8.13
+
+phys.s$StationCode[phys.s$PhysicalDataID==1752] <- "STTD"
+phys.s$Conductivity[phys.s$PhysicalDataID==1752] <- 530
+phys.s$SpCnd[phys.s$PhysicalDataID==1752] <- 563
+phys.s$Turbidity[phys.s$PhysicalDataID==1752] <- 16.5
+phys.s$Tide[phys.s$PhysicalDataID==1752] <- "Ebb"
+phys.s$Date[phys.s$PhysicalDataID==1752] <-as.Date("2018-09-27", format = "%Y-%m-%d")
+
+phys.s$SampleTime[phys.s$PhysicalDataID==401] <- as.hms("13:22:00", "%H:%m:%S")
+phys.s$SampleTime[phys.s$PhysicalDataID==1602] <- as.hms("13:50:00", "%H:%m:%S")
+
+# Remove rows with no data
+phys.s <- phys.s%>%
+  filter(!PhysicalDataID %in% to_drop)
+
+# Write cleaned up file to be used later (merged with zooplankton, etc.)
+write.csv(phys.s, "Data/QC/LT_phys_qc.csv")
+
+phys.s %>%
+  filter(SpCnd>1500)
+
+```
+
+
+## 5a. Dates Start and End
+```{r Stations Start and End, include=FALSE}
+dates <- phys.s %>%
+  arrange(StationCode, SampleDate) %>%
+  group_by(StationCode)%>%
+  slice(1)
+
+dates2 <- phys.s%>%
+  arrange(StationCode, desc(SampleDate)) %>%
+  group_by(StationCode) %>%
+  slice(1)
+
+datesstartend <- cbind(dates,dates2)%>%
+  select(StationCode,SampleDate, SampleDate1)
+
+```
+
+## 6. Plot QCed data
+
+```{r Plot edited data, message = FALSE, warning = FALSE, echo = FALSE}
+#
+p.temp <- ggplot(phys.s, aes(SampleDate, WaterTemperature)) + geom_point() + labs(y = "Water Temp(C)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.secchi <- ggplot(phys.s, aes(SampleDate, Secchi)) + geom_point() + labs(y = "Secchi Depth(m)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.conductivity <- ggplot(phys.s, aes(SampleDate, Conductivity)) + geom_point() + labs(y = "Conductivity(useimens/cm)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.spc <- ggplot(phys.s, aes(SampleDate, SpCnd)) + geom_point() + labs(y = "SpCnd(useimens/cm)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.pH <- ggplot(phys.s, aes(SampleDate, pH)) + geom_point() + labs(y = "pH") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.do <- ggplot(phys.s, aes(SampleDate, DO)) + geom_point() + labs(y = "DO(mg/L)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.turb <- ggplot(phys.s, aes(SampleDate, Turbidity)) + geom_point() + labs(y = "Turbidity(NTU)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+
+# Arrange plots together
+grid.arrange(p.temp, p.ec, p.spc, p.secchi, p.turb, p.do, p.pH)
+```
+
+## 7.Look at Data by Station Groups
+
+```{r Stations, message = FALSE, warning = FALSE}
+sta.sum <- phys.s %>%
+  group_by(StationCode, Year) %>%
+  summarize(n = n())
+
+ggplot(sta.sum, aes(Year, n, fill = StationCode)) + geom_bar(stat = "identity") +theme_bw() +
+  scale_y_continuous(breaks = seq(0,300,20))+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+ggplot(sta.sum, aes(StationCode, n, fill = Year)) + geom_bar(stat = "identity") +
+    scale_y_continuous(breaks = seq(0,600,50))+
+    theme_bw()+
+    theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+```
+
+## 8.Separate into separate datasets: Yolo, LIS, SHR, STTD, Fall Flow (FF), YTR, CCS, KNA 
+
+```{r Station datasets, message = FALSE, warning = FALSE}
+phys_CCS <- phys.s %>%
+  filter(StationCode == "CCS")
+
+phys_KNA <- phys.s %>%
+  filter(StationCode == "KNA")
+
+phys_Yolo <- phys.s%>%
+  filter(StationCode == "STTD" | StationCode == "LIS" | StationCode == "SHR")
+
+phys_STTD <- phys.s %>%
+  filter(StationCode == "STTD")
+
+phys_SHR <- phys.s%>%
+  filter(StationCode == "SHR")
+
+phys_LIS <- phys.s%>%
+  filter(StationCode == "LIS")
+
+phys_YTR <- phys.s %>%
+  filter(str_detect(StationCode, "^YTR"))
+
+phys_FF <- phys.s %>%
+  filter(StationCode != "STTD" & StationCode != "SHR" & StationCode != "LIS" & StationCode != "CCS" & StationCode !="KNA") %>%
+  filter(!str_detect(StationCode, "^YTR"))
+
+```
+
+## Summary Tables - Min and max of variables by station
+
+```{r minmaxtables, message = FALSE, warning = FALSE}
+# All database data
+WQ.overall <- phys.s %>%
+  summarize(min.temp = min(WaterTemperature, na.rm=T),
+            max.temp = max(WaterTemperature, na.rm=T),
+            min.Conductivity = min(Conductivity, na.rm=T),
+            max.Conductivity = max(Conductivity,na.rm=T),
+            min.SPC = min(SpCnd,na.rm=T),
+            max.SPC = max(SpCnd,na.rm=T),
+            min.Secchi = min(Secchi,na.rm=T),
+            max.Secchi = max(Secchi,na.rm=T),
+            min.Turbidity = min(Turbidity,na.rm=T),
+            max.Turbidity = max(Turbidity,na.rm=T),
+            min.pH = min(pH,na.rm=T),
+            max.pH = max(pH,na.rm=T),
+            min.DO = min(DO,na.rm=T),
+            max.DO = max(DO,na.rm=T),
+            n = n()) 
+
+WQ1.sum <- phys.s %>%
+  group_by(StationCode) %>%
+  summarize(min.temp = min(WaterTemperature, na.rm=T),
+            max.temp = max(WaterTemperature, na.rm=T),
+            min.Conductivity = min(Conductivity, na.rm=T),
+            max.Conductivity = max(Conductivity,na.rm=T),
+            min.SPC = min(SpCnd,na.rm=T),
+            max.SPC = max(SpCnd,na.rm=T),
+            n = n())
+
+WQ2.sum <- phys.s %>%
+  group_by(StationCode) %>%
+  summarize(min.Secchi = min(Secchi,na.rm=T),
+            max.Secchi = max(Secchi,na.rm=T),
+            min.Turbidity = min(Turbidity,na.rm=T),
+            max.Turbidity = max(Turbidity,na.rm=T),
+            min.pH = min(pH,na.rm=T),
+            max.pH = max(pH,na.rm=T),
+            min.DO = min(DO,na.rm=T),
+            max.DO = max(DO,na.rm=T),
+            n = n())
+
+kable(WQ.overall) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+kable(WQ1.sum) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+kable(WQ2.sum) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+```
+
+## Yolo
+### Temperature Plots - Yolo
+
+```{r Yolo temperature plots, warning = FALSE, message = FALSE}
+
+# Temp by Year
+ggplot(data= phys_Yolo, aes(x=Year, y=WaterTemperature, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Temperature by Year and Station") + 
+  scale_y_continuous("Water Temp (C)", breaks = seq(0,65,5))+
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# Temp by Month
+ggplot(data = phys_Yolo, aes(x=MonthAbb, y=WaterTemperature, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Temperature by Month and Station", x  = "Month") +
+  scale_y_continuous("Water Temp (C)", breaks = seq(0,65,5))+
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# Point Plot
+ggplot(data = phys_Yolo, aes(x=SampleDate, y=WaterTemperature, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Yolo Temps") + 
+  scale_y_continuous("Water Temp (C)", breaks = seq(0,20,5))+
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of Temperatures
+t.hist.yolo <- ggplot(data=phys_Yolo, aes(x=WaterTemperature)) + geom_histogram(binwidth = 5, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Yolo Histogram", x  = "Month") +
+  scale_x_continuous("Water Temp (C)", breaks = seq(0,65,5)) +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+
+# Histogram of Temperatures
+t.hist.lis <- ggplot(phys_LIS, aes(x=WaterTemperature)) + geom_histogram(binwidth = 5, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Lisbon", x  = "Month") +
+  scale_x_continuous("Water Temp (C)", breaks = seq(0,65,5)) +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+t.hist.sttd <- ggplot(phys_STTD, aes(x=WaterTemperature)) + geom_histogram(binwidth = 5, fill = "lightseagreen", colour = "lightgray") + 
+  labs(title = "Screw Trap", x  = "Month") +
+  scale_x_continuous("Water Temp (C)", breaks = seq(0,65,5)) +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+t.hist.shr <- ggplot(phys_SHR, aes(x=WaterTemperature)) + geom_histogram(binwidth = 5, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Sherwood", x  = "Month") +
+  scale_x_continuous("Water Temp (C)", breaks = seq(0,65,5)) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(t.hist.yolo, t.hist.sttd, t.hist.shr, t.hist.lis)
+
+```
+
+
+### Secchi Depth Plots - Yolo
+```{r Secchi Depth Plots Yolo, echo = FALSE, message = FALSE, warning = FALSE}
+# Secchi by Year
+ggplot(data= phys_Yolo, aes(x=Year, y=Secchi, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Secchi Depth by Year and Station") + 
+  scale_y_continuous("Secchi Depth (m)", breaks = seq(0,5.5,0.5))+
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# Secchi by Month
+ggplot(data = phys_Yolo, aes(x=MonthAbb, y=Secchi, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Secchi Depth by Month and Station", x  = "Month") +
+  scale_y_continuous("Secchi Depth (m)", breaks = seq(0,5.5, 0.5))+
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# Point Plot
+ggplot(data = phys_Yolo, aes(x=SampleDate, y=Secchi, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Yolo Secchi Depths") + 
+  scale_y_continuous("Secchi Depth (m)", breaks = seq(0,5.5,0.5))+
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of Secchi Depths
+sech.hist.yolo <- ggplot(data=phys_Yolo, aes(x=Secchi)) + geom_histogram(binwidth = 0.2, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Yolo Histogram", x  = "Month") +
+  scale_x_continuous("Secchi Depth (m)", breaks = seq(0,5.5,0.5)) +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Individual Station Histograms
+sech.hist.lis <- ggplot(phys_LIS, aes(x=Secchi)) + 
+  geom_histogram(binwidth = 0.2, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Lisbon", x  = "Month") +
+  scale_x_continuous("Secchi Depth (m)", breaks = seq(0,5.5,0.5)) +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+sech.hist.sttd <- ggplot(phys_STTD, aes(x=Secchi)) + geom_histogram(binwidth=0.2,fill = "lightseagreen", colour = "lightgray") + 
+  labs(title = "Screw Trap", x  = "Month") +
+  scale_x_continuous("Secchi Depth (m)", breaks = seq(0,5.5,0.5)) +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+sech.hist.shr <- ggplot(phys_SHR, aes(x=Secchi)) + geom_histogram(binwidth =0.2, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Sherwood", x  = "Month") +
+  scale_x_continuous("Secchi Depth (m)", breaks = seq(0,5.5,0.5)) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(sech.hist.yolo, sech.hist.sttd, sech.hist.shr, sech.hist.lis)
+
+
+
+```
+
+### Turbidity Plots - Yolo
+
+```{r Turbidity Plots Yolo, echo = FALSE, message = FALSE, warning = FALSE}
+# Turbidity by Year
+ggplot(data= phys_Yolo, aes(x=Year, y=Turbidity, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Turbidity by Year and Station") + 
+  scale_y_continuous("Turbidity (NTU)") +
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# Turbidity by Month
+ggplot(data = phys_Yolo, aes(x=MonthAbb, y=Turbidity, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Turbidity  by Month and Station", x  = "Month") +
+  scale_y_continuous("Turbidity (NTU)")+
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# Point Plot
+ggplot(data = phys_Yolo, aes(x=SampleDate, y=Turbidity, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Yolo Turbidity") + 
+  scale_y_continuous("Turbidity (NTU)")+
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of Turbidity
+turb.hist.yolo <- ggplot(data=phys_Yolo, aes(x=Turbidity)) + geom_histogram(binwidth = 10, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Yolo Histogram", x  = "Month") +
+  scale_x_continuous("Turbidity (NTU)") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of Turbidity
+turb.hist.lis <- ggplot(phys_LIS, aes(x=Turbidity)) + 
+  geom_histogram(binwidth = 10, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Lisbon", x  = "Month") +
+  scale_x_continuous("Turbidity (NTU)") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+turb.hist.sttd <- ggplot(phys_STTD, aes(x=Turbidity)) + geom_histogram(binwidth = 10, fill = "lightseagreen", colour = "lightgray") + 
+  labs(title = "Screw Trap", x  = "Month") +
+  scale_x_continuous("Turbidity (NTU)") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+turb.hist.shr <- ggplot(phys_SHR, aes(x=Turbidity)) + geom_histogram(binwidth = 10, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Sherwood", x  = "Month") +
+  scale_x_continuous("Turbidity (NTU)") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(turb.hist.yolo, turb.hist.sttd, turb.hist.shr, turb.hist.lis)
+
+```
+
+### Conductivity Plots - Yolo
+
+```{r Conductivity Plots Yolo, echo = FALSE, message = FALSE, warning = FALSE}
+
+# Conductivity by Year
+ggplot(data= phys_Yolo, aes(x=Year, y=Conductivity, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Conductivity by Year and Station") + 
+  scale_y_continuous("Conductivity") +
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# Conductivity by Month
+ggplot(data = phys_Yolo, aes(x=MonthAbb, y=Conductivity, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Conductivity  by Month and Station", x  = "Month") +
+  scale_y_continuous("Conductivity")+
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# Point Plot
+ggplot(data = phys_Yolo, aes(x=SampleDate, y=Conductivity, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Yolo Conductivity") + 
+  scale_y_continuous("Conductivity")+
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of Conductivity
+conductivity.hist.yolo <- ggplot(data=phys_Yolo, aes(x=Conductivity)) + geom_histogram(binwidth = 20, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Yolo Histogram", x  = "Month") +
+  scale_x_continuous("Conductivity") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Specific stations
+conductivity.hist.lis <- ggplot(phys_LIS, aes(x=Conductivity)) + 
+  geom_histogram(binwidth = 20, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Lisbon", x  = "Month") +
+  scale_x_continuous("Conductivity") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+conductivity.hist.sttd <- ggplot(phys_STTD, aes(x=Conductivity)) + geom_histogram(binwidth =20, fill = "lightseagreen", colour = "lightgray") + 
+  labs(title = "Screw Trap", x  = "Month") +
+  scale_x_continuous("Conductivity") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+conductivity.hist.shr <- ggplot(phys_SHR, aes(x=Conductivity)) + geom_histogram(binwidth = 20, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Sherwood", x  = "Month") +
+  scale_x_continuous("Conductivity") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(conductivity.hist.yolo, conductivity.hist.sttd, conductivity.hist.shr, conductivity.hist.lis)
+
+
+```
+
+
+### SPC Plots - Yolo
+
+```{r SPC Plots Yolo, echo = FALSE, message = FALSE, warning = FALSE}
+
+
+# SpCnd by Year
+ggplot(data= phys_Yolo, aes(x=Year, y=SpCnd, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "SpCnd by Year and Station") + 
+  scale_y_continuous("SpCnd") +
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# SpCnd by Month
+ggplot(data = phys_Yolo, aes(x=MonthAbb, y=SpCnd, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "SpCnd  by Month and Station", x  = "Month") +
+  scale_y_continuous("SpCnd")+
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# Point Plot
+ggplot(data = phys_Yolo, aes(x=SampleDate, y=SpCnd, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Yolo SpCnd") + 
+  scale_y_continuous("SpCnd")+
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+
+## Histograms
+# Histogram of SpCnd
+spc.hist.yolo <- ggplot(data=phys_Yolo, aes(x=SpCnd)) + geom_histogram(binwidth = 20, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Yolo Histogram", x  = "Month") +
+  scale_x_continuous("SpCnd") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+
+# Specific stations
+spc.hist.lis <- ggplot(phys_LIS, aes(x=SpCnd)) + 
+  geom_histogram(binwidth = 20, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Lisbon", x  = "Month") +
+  scale_x_continuous("SpCnd") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+spc.hist.sttd <- ggplot(phys_STTD, aes(x=SpCnd)) + geom_histogram(binwidth =20, fill = "lightseagreen", colour = "lightgray") + 
+  labs(title = "Screw Trap", x  = "Month") +
+  scale_x_continuous("SpCnd") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+spc.hist.shr <- ggplot(phys_SHR, aes(x=SpCnd)) + geom_histogram(binwidth = 20, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Sherwood", x  = "Month") +
+  scale_x_continuous("SpCnd") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(spc.hist.yolo, spc.hist.sttd, spc.hist.shr, spc.hist.lis)
+
+```
+
+### DO Plots - Yolo
+```{r DO Plots for Yolo, echo = FALSE, message = FALSE, warning = FALSE}
+# DO by Year
+ggplot(data= phys_Yolo, aes(x=Year, y=DO, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "DO by Year and Station") + 
+  scale_y_continuous("DO") +
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# DO by Month
+ggplot(data = phys_Yolo, aes(x=MonthAbb, y=DO, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "DO  by Month and Station", x  = "Month") +
+  scale_y_continuous("DO")+
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# Point Plot
+ggplot(data = phys_Yolo, aes(x=SampleDate, y=DO, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Yolo DO") + 
+  scale_y_continuous("DO")+
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of DO
+do.hist.yolo <- ggplot(data=phys_Yolo, aes(x=DO)) + geom_histogram(binwidth = 1, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Yolo Histogram", x  = "Month") +
+  scale_x_continuous("DO") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+
+# Specific stations
+do.hist.lis <- ggplot(phys_LIS, aes(x=DO)) + 
+  geom_histogram(binwidth = 1, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Lisbon", x  = "Month") +
+  scale_x_continuous("DO") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+do.hist.sttd <- ggplot(phys_STTD, aes(x=DO)) + geom_histogram(binwidth =1, fill = "lightseagreen", colour = "lightgray") + 
+  labs(title = "Screw Trap", x  = "Month") +
+  scale_x_continuous("DO") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+do.hist.shr <- ggplot(phys_SHR, aes(x=DO)) + geom_histogram(binwidth = 1, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Sherwood", x  = "Month") +
+  scale_x_continuous("DO") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(do.hist.yolo, do.hist.sttd, do.hist.shr, do.hist.lis)
+
+```
+
+### pH Plots - Yolo
+```{r pH Plots for Yolo, echo = FALSE, message = FALSE, warning = FALSE}
+# pH by Year
+ggplot(data= phys_Yolo, aes(x=Year, y=pH, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "pH by Year and Station") + 
+  scale_y_continuous("pH") +
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# pH by Month
+ggplot(data = phys_Yolo, aes(x=MonthAbb, y=pH, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "pH  by Month and Station", x  = "Month") +
+  scale_y_continuous("pH")+
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11),
+        legend.position = "bottom")
+
+# Point Plot
+ggplot(data = phys_Yolo, aes(x=SampleDate, y=pH, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Yolo pH") + 
+  scale_y_continuous("pH")+
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of pH
+pH.hist.yolo <- ggplot(data=phys_Yolo, aes(x=pH)) + geom_histogram(binwidth = .5, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Yolo Histogram", x  = "Month") +
+  scale_x_continuous("pH") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Specific stations
+pH.hist.lis <- ggplot(phys_LIS, aes(x=pH)) + 
+  geom_histogram(binwidth = .5, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Lisbon", x  = "Month") +
+  scale_x_continuous("pH") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+pH.hist.sttd <- ggplot(phys_STTD, aes(x=pH)) + geom_histogram(binwidth = .5, fill = "lightseagreen", colour = "lightgray") + 
+  labs(title = "Screw Trap", x  = "Month") +
+  scale_x_continuous("pH") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+pH.hist.shr <- ggplot(phys_SHR, aes(x=pH)) + geom_histogram(binwidth = .5, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "Sherwood", x  = "Month") +
+  scale_x_continuous("pH") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(pH.hist.yolo, pH.hist.sttd, pH.hist.shr, pH.hist.lis)
+```
+
+### Correlation Plots: TurbidityxSecchi, DOxTemp, ConductivityxSpCnd
+```{r Correlations, message = FALSE, warning = FALSE}
+sec.tur <- ggplot(phys_Yolo, aes(x=Turbidity, y = Secchi)) + geom_point() + geom_smooth() +
+  labs(title = "Secchi x Turbidity", x = "Turbidity (NTU)", y = "Secchi Depth (m)")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+do.temp <- ggplot(phys_Yolo, aes(x=WaterTemperature, y = DO)) + geom_point() + geom_smooth() +
+  labs(title = "DO x Temp", x = "Water Temp (C)", y = "DO (mg/L)")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ec.spc <- ggplot(phys_Yolo, aes(x= SpCnd, y = Conductivity )) + geom_point() + geom_smooth() +
+  #labs(title = "Conductivity x SpCnd", x = "SpCnd (usiemens/cm)", y = "Conductivity (usiemens/cm)")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+spc.ec <- ggplot(phys_Yolo, aes(x=Conductivity, y = SpCnd)) + geom_point() + geom_smooth() +
+  labs(title = "SpCnd x Conductivity", x = "Conductivity (usiemens/cm)", y = "SpCnd (usiemens/cm)")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(sec.tur, do.temp, spc.ec, ec.spc)
+```
+
+
+## Fall Flow
+### Temperature Plots - Fall Flow
+
+
+```{r Fall Flow Temperature Plots, echo = FALSE, message = FALSE, warning = FALSE}
+# Temp by Year
+box.ff.year <- ggplot(phys_FF, aes(x=Year, y=WaterTemperature)) + geom_boxplot() + 
+  labs(title = "Temperature by Year") + 
+  scale_y_continuous("Water Temp (C)", breaks = seq(0,65,5))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# and station
+ggplot(phys_FF, aes(x=Year, y=WaterTemperature, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Temperature by Year and Station") + 
+  scale_y_continuous("Water Temp (C)", breaks = seq(0,65,5))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position ="bottom")
+
+# Temp by Month
+box.ff.month <- ggplot(phys_FF, aes(x=MonthAbb, y=WaterTemperature)) + geom_boxplot() + 
+  labs(title = "Temperature by Month", x  = "Month") +
+  scale_y_continuous("Water Temp (C)", breaks = seq(0,65,5))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12))
+
+# and station
+ggplot(phys_FF, aes(x=MonthAbb, y=WaterTemperature, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Temperature by Month and Station") +
+  scale_y_continuous("Water Temp (C)", breaks = seq(0,65,5))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position = "bottom"
+        )
+
+# Point Plot
+pt.ff <- ggplot(data = phys_FF, aes(x=SampleDate, y=WaterTemperature, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Fall Flow Temps") + 
+  scale_y_continuous("Water Temp (C)", breaks = seq(0,20,5))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of Temperatures
+hist.ff <- ggplot(phys_FF, aes(x=WaterTemperature)) + geom_histogram(binwidth =5, fill = "seagreen4", colour = "lightgray") +
+  labs(title = "FF Temperature Histogram", x = "Water Temp (C)") +
+  scale_x_continuous("Water Temp (C)", breaks = seq(0,30,5)) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(box.ff.year, box.ff.month,pt.ff, hist.ff, ncol = 2)
+
+```
+
+### Secchi Plots - FF
+
+```{r Fall Flow Secchi Plots, echo = FALSE, message = FALSE, warning = FALSE}
+
+# by Year
+sec.box.ff.year <- ggplot(phys_FF, aes(x=Year, y=Secchi)) + geom_boxplot() + 
+  labs(title = "Secchi Depth by Year") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# by station
+ggplot(phys_FF, aes(x=StationCode, y=Secchi, fill = Year)) + geom_boxplot() + 
+  labs(title = "Secchi Depth by Year and Station") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position ="bottom")
+
+# by Month
+sec.box.ff.month <- ggplot(phys_FF, aes(x=MonthAbb, y=Secchi)) + geom_boxplot() + 
+  labs(title = "Secchi Depth by Month", x  = "StationCode") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12))
+
+# and station
+ggplot(phys_FF, aes(x=StationCode, y=Secchi, fill = MonthAbb)) + geom_boxplot() + 
+  labs(title = "Secchi Depth by Month and Station") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position = "bottom"
+        )
+
+# Point Plot
+sec.pt.ff <- ggplot(data = phys_FF, aes(x=SampleDate, y=Secchi, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Fall Flow Secchi") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of Secchi Depths
+sec.hist.ff <- ggplot(phys_FF, aes(x=Secchi)) + geom_histogram(binwidth = 0.5, fill = "seagreen4", colour = "lightgray") +
+  labs(title = "FF Secchi Depth Histogram", x = "Secchi Depth (m)") +
+  scale_x_continuous("Secchi Depth (m)", breaks = seq(0,30,5)) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(sec.box.ff.year, sec.box.ff.month, sec.pt.ff, sec.hist.ff, ncol = 2)
+
+```
+
+### Turbidity Plots - FF
+
+```{r Fall Flow Turbidity Plots, echo = FALSE, message = FALSE, warning = FALSE}
+# by Year
+turb.box.ff.year <- ggplot(phys_FF, aes(x=Year, y=Turbidity)) + geom_boxplot() + 
+  labs(title = "Turbidity by Year") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# by station
+ggplot(phys_FF, aes(x=StationCode, y=Turbidity, fill = Year)) + geom_boxplot() + 
+  labs(title = "Turbidity by Year and Station") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position ="bottom")
+
+# by Month
+turb.box.ff.month <- ggplot(phys_FF, aes(x=MonthAbb, y=Turbidity)) + geom_boxplot() + 
+  labs(title = "Turbidity by Month", x  = "StationCode") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12))
+
+# and station
+ggplot(phys_FF, aes(x=StationCode, y=Turbidity, fill = MonthAbb)) + geom_boxplot() + 
+  labs(title = "Turbidity by Month and Station") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position = "bottom"
+        )
+
+# Point Plot
+turb.pt.ff <- ggplot(data = phys_FF, aes(x=SampleDate, y=Turbidity, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Fall Flow Turbidity") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of Turbiditys
+turb.hist.ff <- ggplot(phys_FF, aes(x=Turbidity)) + geom_histogram(binwidth = 10, fill = "seagreen4", colour = "lightgray") +
+  labs(title = "FF Turbidity Histogram", x = "Turbidity (NTU)") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(turb.box.ff.year, turb.box.ff.month, turb.pt.ff, turb.hist.ff, ncol = 2)
+
+```
+
+### Conductivity Plots - FF
+
+```{r Fall Flow Conductivity Plots, echo = FALSE, message = FALSE, warning = FALSE}
+# by Year
+ec.box.ff.year <- ggplot(phys_FF, aes(x=Year, y=Conductivity)) + geom_boxplot() + 
+  labs(title = "Conductivity by Year") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# by Year
+ec.box.ff.month <- ggplot(phys_FF, aes(x=MonthAbb, y=Conductivity)) + geom_boxplot() + 
+  labs(title = "Conductivity by Year") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# by station
+ggplot(phys_FF, aes(x=StationCode, y=Conductivity, fill = Year)) + geom_boxplot() + 
+  labs(title = "Conductivity by Year and Station") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position ="bottom")
+
+
+# month
+ggplot(phys_FF, aes(x=StationCode, y=Conductivity, fill = MonthAbb)) + geom_boxplot() + 
+  labs(title = "Conductivity by Month and Station") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position = "bottom"
+        )
+
+# Point Plot
+ec.pt.ff <- ggplot(data = phys_FF, aes(x=SampleDate, y=Conductivity, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Fall Flow Conductivity") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of Conductivitys
+ec.hist.ff <- ggplot(phys_FF, aes(x=Conductivity)) + geom_histogram(binwidth = 50, fill = "seagreen4", colour = "lightgray") +
+  labs(title = "FF Conductivity Histogram", x = "Conductivity") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(ec.box.ff.year, ec.box.ff.month, ec.pt.ff, ec.hist.ff, ncol = 2)
+
+
+```
+
+### SpCnd Plots - FF
+
+```{r Fall Flow SpCnd Plots, echo = FALSE, message = FALSE, warning = FALSE}
+# by Year
+spc.box.ff.year <- ggplot(phys_FF, aes(x=Year, y=SpCnd)) + geom_boxplot() + 
+  labs(title = "SpCnd by Year") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# by station
+ggplot(phys_FF, aes(x=StationCode, y=SpCnd, fill = Year)) + geom_boxplot() + 
+  labs(title = "SpCnd by Year and Station") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position ="bottom")
+
+# by Month
+spc.box.ff.month <- ggplot(phys_FF, aes(x=MonthAbb, y=SpCnd)) + geom_boxplot() + 
+  labs(title = "SpCnd by Month", x  = "Month") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12))
+
+# and station
+ggplot(phys_FF, aes(x=StationCode, y=SpCnd, fill = MonthAbb)) + geom_boxplot() + 
+  labs(title = "SpCnd by Month and Station") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position = "bottom"
+        )
+
+# Point Plot
+spc.pt.ff <- ggplot(data = phys_FF, aes(x=SampleDate, y=SpCnd, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Fall Flow SpCnd") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of SpCnds
+spc.hist.ff <- ggplot(phys_FF, aes(x=SpCnd)) + geom_histogram(binwidth = 50, fill = "seagreen4", colour = "lightgray") +
+  labs(title = "FF SpCnd Histogram", x = "SpCnd") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(spc.box.ff.year, spc.box.ff.month, spc.pt.ff, spc.hist.ff, ncol = 2)
+
+
+```
+
+
+### DO Plots - FF
+
+```{r Fall Flow DO Plots, echo = FALSE, message = FALSE, warning = FALSE}
+# by Year
+do.box.ff.year <- ggplot(phys_FF, aes(x=Year, y=DO)) + geom_boxplot() + 
+  labs(title = "DO by Year") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# by station
+ggplot(phys_FF, aes(x=StationCode, y=DO, fill = Year)) + geom_boxplot() + 
+  labs(title = "DO by Year and Station") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position ="bottom")
+
+# by Month
+do.box.ff.month <- ggplot(phys_FF, aes(x=MonthAbb, y=DO)) + geom_boxplot() + 
+  labs(title = "DO by Month", x  = "Month") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12))
+
+# and station
+ggplot(phys_FF, aes(x=StationCode, y=DO, fill = MonthAbb)) + geom_boxplot() + 
+  labs(title = "DO by Month and Station") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position = "bottom"
+        )
+
+# Point Plot
+do.pt.ff <- ggplot(data = phys_FF, aes(x=SampleDate, y=DO, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Fall Flow DO") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of DOs
+do.hist.ff <- ggplot(phys_FF, aes(x=DO)) + geom_histogram(binwidth = 1, fill = "seagreen4", colour = "lightgray") +
+  labs(title = "FF DO Histogram", x = "DO") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(do.box.ff.year, do.box.ff.month, do.pt.ff, do.hist.ff, ncol = 2)
+
+```
+
+### pH Plots - FF
+
+```{r Fall Flow pH Plots, echo = FALSE, message = FALSE, warning = FALSE}
+# by Year
+pH.box.ff.year <- ggplot(phys_FF, aes(x=Year, y=pH)) + geom_boxplot() + 
+  labs(title = "pH by Year") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# by station
+ggplot(phys_FF, aes(x=StationCode, y=pH, fill = Year)) + geom_boxplot() + 
+  labs(title = "pH by Year and Station") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position ="bottom")
+
+# by Month
+pH.box.ff.month <- ggplot(phys_FF, aes(x=MonthAbb, y=pH)) + geom_boxplot() + 
+  labs(title = "pH by Month", x  = "Month") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12))
+
+# and station
+ggplot(phys_FF, aes(x=StationCode, y=pH, fill = MonthAbb)) + geom_boxplot() + 
+  labs(title = "pH by Month and Station") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.position = "bottom"
+        )
+
+# Point Plot
+pH.pt.ff <- ggplot(data = phys_FF, aes(x=SampleDate, y=pH, colour = StationCode)) + geom_point(size = 2)+
+labs(title = "Fall Flow pH") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of pHs
+pH.hist.ff <- ggplot(phys_FF, aes(x=pH)) + geom_histogram(binwidth = 1, fill = "seagreen4", colour = "lightgray") +
+  labs(title = "FF pH Histogram", x = "pH") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(pH.box.ff.year, pH.box.ff.month, pH.pt.ff, pH.hist.ff, ncol = 2)
+
+```
+
+### Correlation Plots: TurbidityxSecchi, DOxTemp, ConductivityxSpCnd
+```{r Fall Flow Correlations, message = FALSE, warning = FALSE}
+sec.tur <- ggplot(phys_FF, aes(x=Turbidity, y = Secchi)) + geom_point() + geom_smooth() +
+  labs(title = "Secchi x Turbidity", x = "Turbidity (NTU)", y = "Secchi Depth (m)")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+do.temp <- ggplot(phys_FF, aes(x=WaterTemperature, y = DO)) + geom_point() + geom_smooth() +
+  labs(title = "DO x Temp", x = "Water Temp (C)", y = "DO (mg/L)")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ec.spc <- ggplot(phys_FF, aes(x= SpCnd, y = Conductivity )) + geom_point() + geom_smooth() +
+  #labs(title = "Conductivity x SpCnd", x = "SpCnd (usiemens/cm)", y = "Conductivity (usiemens/cm)")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+spc.ec <- ggplot(phys_FF, aes(x=Conductivity, y = SpCnd)) + geom_point() + geom_smooth() +
+  labs(title = "SpCnd x Conductivity", x = "Conductivity (usiemens/cm)", y = "SpCnd (usiemens/cm)")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(sec.tur, do.temp, spc.ec, ec.spc)
+
+phys_FF %>%
+  filter(Conductivity>2000)
+```
+
+## YTR Plots
+### Temperature Plots - YTR
+
+```{r YTR Temperature Plots, echo = FALSE, message = FALSE, warning = FALSE}
+# Temp by Year
+box.ytr.year <- ggplot(phys_YTR, aes(x=Year, y=WaterTemperature, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Temperature by Year and Station") + 
+  scale_y_continuous("Water Temp (C)", breaks = seq(0,65,5))+
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Temp by Month
+box.ytr.month <- ggplot(phys_YTR, aes(x=MonthAbb, y=WaterTemperature, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Temperature by Month and Station", x  = "Month") +
+  scale_y_continuous("Water Temp (C)", breaks = seq(0,65,5))+
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Point Plot
+pt.ytr <- ggplot(phys_YTR, aes(x=SampleDate, y=WaterTemperature, colour = StationCode)) + geom_point(size = 4)+
+labs(title = "YTR Temps") + 
+  scale_y_continuous("Water Temp (C)", breaks = seq(0,20,5))+
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram of Temperatures
+hist.ytr <- ggplot(phys_YTR, aes(x=WaterTemperature)) + geom_histogram(fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "YTR", x  = "Month") +
+  scale_x_continuous("Water Temp (C)", breaks = seq(0,65,5)) +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(box.ytr.year, box.ytr.month, pt.ytr, hist.ytr)
+
+```
+
+### Secchi Plots - YTR
+
+```{r YTR Secchi Plots, echo = FALSE, message = FALSE, warning = FALSE}
+
+# by Year
+sec.box.ytr.year <- ggplot(phys_YTR, aes(x=StationCode, y=Secchi, fill = StationCode)) + 
+  geom_boxplot() + 
+  labs(title = "Secchi Depth by Station") + 
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# by Month
+sec.box.ytr.month <- ggplot(phys_YTR, aes(x=MonthAbb, y=Secchi, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Secchi Depth by Month and Station", x  = "Station") +
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Point Plot
+sec.pt.ytr <- ggplot(phys_YTR, aes(x=SampleDate, y=Secchi, colour = StationCode)) + geom_point(size = 4)+
+labs(title = "YTR Secchi Depth") + 
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram
+sec.hist.ytr <- ggplot(phys_YTR, aes(x=Secchi)) + geom_histogram(binwidth = 0.1, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "YTR Secchi Depths", x  = "Month") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(sec.box.ytr.year, sec.box.ytr.month, sec.pt.ytr, sec.hist.ytr)
+
+```
+
+### Turbidity - YTR
+
+```{r YTR Turbidity Plots, echo = FALSE, message = FALSE, warning = FALSE}
+# by Year
+turb.box.ytr.year <- ggplot(phys_YTR, aes(x=StationCode, y=Turbidity, fill = StationCode)) + 
+  geom_boxplot() + 
+  labs(title = "Turbidity by Station") + 
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# by Month
+turb.box.ytr.month <- ggplot(phys_YTR, aes(x=MonthAbb, y=Turbidity, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "Turbidity by Month and Station", x  = "Month") +
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Point Plot
+turb.pt.ytr <- ggplot(phys_YTR, aes(x=SampleDate, y=Turbidity, colour = StationCode)) + geom_point(size = 4)+
+labs(title = "YTR Turbidity") + 
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram
+turb.hist.ytr <- ggplot(phys_YTR, aes(x=Turbidity)) + geom_histogram(binwidth = 10, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "YTR Turbidity", x  = "Month") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(turb.box.ytr.year, turb.box.ytr.month, turb.pt.ytr, turb.hist.ytr)
+
+```
+
+### SpCnd - YTR
+
+```{r YTR SpCnd Plots, echo = FALSE, message = FALSE, warning = FALSE}
+# by Year
+spc.box.ytr.year <- ggplot(phys_YTR, aes(x=StationCode, y=SpCnd, fill = StationCode)) + 
+  geom_boxplot() + 
+  labs(title = "SpCnd by Station") + 
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# by Month
+spc.box.ytr.month <- ggplot(phys_YTR, aes(x=MonthAbb, y=SpCnd, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "SpCnd by Month and Station", x  = "Month") +
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Point Plot
+spc.pt.ytr <- ggplot(phys_YTR, aes(x=SampleDate, y=SpCnd, colour = StationCode)) + geom_point(size = 4)+
+labs(title = "YTR SpCnd") + 
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram
+spc.hist.ytr <- ggplot(phys_YTR, aes(x=SpCnd)) + geom_histogram(binwidth = 10, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "YTR SpCnd", x  = "Month") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(spc.box.ytr.year, spc.box.ytr.month, spc.pt.ytr, spc.hist.ytr)
+
+```
+
+### DO - YTR
+
+```{r YTR DO Plots, echo = FALSE, message = FALSE, warning = FALSE}
+# by Year
+do.box.ytr.year <- ggplot(phys_YTR, aes(x=StationCode, y=DO, fill = StationCode)) + 
+  geom_boxplot() + 
+  labs(title = "DO by Station") + 
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# by Month
+do.box.ytr.month <- ggplot(phys_YTR, aes(x=MonthAbb, y=DO, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "DO by Month and Station", x  = "Month") +
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Point Plot
+do.pt.ytr <- ggplot(phys_YTR, aes(x=SampleDate, y=DO, colour = StationCode)) + geom_point(size = 4)+
+labs(title = "YTR DO") + 
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram
+do.hist.ytr <- ggplot(phys_YTR, aes(x=DO)) + geom_histogram(binwidth = 1, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "YTR DO", x  = "Month") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(do.box.ytr.year, do.box.ytr.month, do.pt.ytr, do.hist.ytr)
+
+```
+
+### pH - YTR
+
+```{r YTR pH Plots, echo = FALSE, message = FALSE, warning = FALSE}
+# by Year
+pH.box.ytr.year <- ggplot(phys_YTR, aes(x=StationCode, y=pH, fill = StationCode)) + 
+  geom_boxplot() + 
+  labs(title = "pH by Station") + 
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# by Month
+pH.box.ytr.month <- ggplot(phys_YTR, aes(x=MonthAbb, y=pH, fill = StationCode)) + geom_boxplot() + 
+  labs(title = "pH by Month and Station", x  = "Month") +
+  scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Point Plot
+pH.pt.ytr <- ggplot(phys_YTR, aes(x=SampleDate, y=pH, colour = StationCode)) + geom_point(size = 4)+
+labs(title = "YTR pH") + 
+  scale_colour_manual(values = c("coral3", "lightseagreen", "khaki3", "lightskyblue3")) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+# Histogram
+pH.hist.ytr <- ggplot(phys_YTR, aes(x=pH)) + geom_histogram(binwidth = .5, fill = "lightseagreen", colour = "lightgray") +
+  labs(title = "YTR pH", x  = "Month") +
+  #scale_fill_manual(values = c("coral3", "lightseagreen", "khaki3"))+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+grid.arrange(pH.box.ytr.year, pH.box.ytr.month, pH.pt.ytr, pH.hist.ytr)
+
+```
+
+## CCS Plots 
+
+```{r CCS Check}
+
+ccs.temp <- ggplot(phys_CCS, aes(SampleDate, WaterTemperature)) + geom_point() + labs(y = "Water Temp(C)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+ccs.secchi <- ggplot(phys_CCS, aes(SampleDate, Secchi)) + geom_point() + labs(y = "Secchi Depth(m)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+ccs.ec <- ggplot(phys_CCS, aes(SampleDate, Conductivity)) + geom_point() + labs(y = "Conductivity(useimens/cm)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+
+grid.arrange(ccs.temp, ccs.secchi, ccs.ec, ncol = 2)
+```
+
+## KNA Plots 
+
+```{r KNA Check}
+
+kna.temp <- ggplot(phys_KNA, aes(SampleDate, WaterTemperature)) + geom_point() + labs(y = "Water Temp(C)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+kna.do <- ggplot(phys_KNA, aes(SampleDate, DO)) + geom_point() + labs(y = "Dissolved Oxygen (mg/L") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+kna.ec <- ggplot(phys_KNA, aes(SampleDate, Conductivity)) + geom_point() + labs(y = "Conductivity(useimens/cm)") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+kna.pH <- ggplot(phys_KNA, aes(SampleDate, pH)) + geom_point() + labs(y = "pH") +
+  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+
+grid.arrange(kna.temp, kna.do, kna.ec, kna.pH, ncol = 2)
+```
+
+
+## 9. Check against Lisbon data
+```{r Lisbon Check Yolo, message = FALSE, warning = FALSE}
+library(lubridate)
+#Sensors
+  #Water Temp in F =25  (2008)
+  #DO= 61  (2013)
+  #Conductivity = 100  (2013)
+  #pH =62   (2013)
+  #Turbidity =27  (2013)
+
+# Read files (came from cdec4gov)
+LIS_WaterTemperature <- read_csv("Data/STA/LIS_25.csv")
+LIS_DO <- read_csv("Data/STA/LIS_61.csv")
+LIS_pH <- read_csv("Data/STA/LIS_62.csv")
+LIS_Turb <- read_csv("Data/STA/LIS_27.csv")
+LIS_EC <- read_csv("Data/STA/LIS_100.csv")
+LIS_WaterTemperature_ed <- LIS_WaterTemperature %>%
+  select(5,6) %>%
+  filter(VALUE<99998) %>%
+  mutate(Temp_C = round((VALUE-32)*5/9,1))
+LIS_DO_ed <- LIS_DO %>%
+  select(5,6) %>%
+  rename("DO" = VALUE)
+LIS_pH_ed <- LIS_pH %>%
+  select(5,6) %>%
+  rename("pH" = VALUE)
+LIS_Turb_ed <- LIS_Turb %>%
+  select(5,6) %>%
+  rename("Turbidity" = VALUE)
+LIS_EC_ed <- LIS_EC%>%
+  select(5,6) %>%
+  rename(Conductivity = "VALUE")
+
+# Merge variables together
+a <- merge(LIS_DO_ed, LIS_Turb_ed, by = "DATE TIME")
+b <- merge(a, LIS_EC_ed, by = "DATE TIME")
+c <- merge(b, LIS_pH_ed, by = "DATE TIME")
+LIS_WQ <- left_join(LIS_WaterTemperature_ed, c, by = "DATE TIME")
+
+# str(LIS_WQ)
+LIS_WQ$SampleTime <- strftime(LIS_WQ$`DATE TIME`, format = "%H:%M:%S")
+LIS_WQ$SampleDate <- as.Date(LIS_WQ$`DATE TIME`)
+LIS_WQ$Hour <- as.numeric(format(strptime(LIS_WQ$SampleTime, "%H:%M:%S"), "%H"))
+
+LIS_WQ_f <- LIS_WQ %>%
+  rename(Datetime = `DATE TIME`,
+         WaterTemperature = Temp_C) %>%
+  filter(Hour>06 & Hour<15)%>%
+  filter(WaterTemperature>0 & WaterTemperature<40) %>%
+  filter(Conductivity>0) %>%
+  filter(DO>0) %>%
+  filter(pH>0 & pH<14) %>%
+  filter(Turbidity >0) %>%
+  mutate(StationCode="LIS_RT") %>%
+  select(1,3:9,11)
+
+Temp <- ggplot(LIS_WQ_f, aes(Datetime, WaterTemperature)) + geom_point() + theme_bw()
+DO <- ggplot(LIS_WQ_f, aes(Datetime, DO)) + geom_point() + theme_bw()
+pH <- ggplot(LIS_WQ_f, aes(Datetime, pH)) + geom_point() + theme_bw()
+Turb <- ggplot(LIS_WQ_f, aes(Datetime, Turbidity)) + geom_point() + theme_bw()
+Conductivity <- ggplot(LIS_WQ_f, aes(Datetime, Conductivity)) + geom_point() + theme_bw()
+
+grid.arrange(Temp, DO, pH, Turb, Conductivity, nrow = 2)
+
+Yolo_WQ <- phys_Yolo %>%
+  select(Datetime,WaterTemperature, DO, Turbidity, Conductivity, pH, SampleTime, SampleDate, StationCode)
+
+WQ_large <- rbind(LIS_WQ_f, Yolo_WQ)
+WQ_large$Year <- as.numeric(year(WQ_large$SampleDate))
+WQ_sub <- WQ_large %>%
+  filter(Year>2001)
+WQ_sub2 <- WQ_large %>%
+  filter(Year>2006)
+WQ_sub3 <- WQ_large %>%
+  filter(Year>2010)
+
+```
+
+## 9a. Plots with Lisbon-Yolo data
+```{r Plots for LIS_Yolo, echo = FALSE, warning = FALSE, message = FALSE}
+ggplot(WQ_large, aes(Datetime, WaterTemperature, colour = StationCode)) + 
+  geom_point() + theme_bw() +
+ scale_colour_manual(values = c("#F3B2FF", "#106E83", "#FFC971", "#BAFF87")) + 
+  labs(title = "Water Temperature")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub, aes(Datetime, Conductivity,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF", "#106E83", "#FFC971", "#BAFF87")) + 
+  labs(title = "Conductivity")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub2, aes(Datetime, DO, colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF", "#106E83", "#FFC971", "#BAFF87")) + 
+  labs(title = "DO")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub2, aes(Datetime, pH,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF", "#106E83", "#FFC971", "#BAFF87")) + 
+  labs(title = "pH")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub3, aes(Datetime, Turbidity,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF", "#106E83", "#FFC971", "#BAFF87")) + 
+  labs(title = "Turbidity")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+```
+
+## 9b.Repeat Check for Fall Flow
+```{r Lisbon Check Fall Flow, echo = FALSE, message = FALSE, warning = FALSE}
+FF_WQ <- phys_FF %>%
+  select(Datetime,WaterTemperature, DO, Turbidity, Conductivity, pH, SampleTime, SampleDate, StationCode)
+
+WQ_large_FF <- rbind(LIS_WQ_f, FF_WQ)
+WQ_large_FF$Year <- as.numeric(year(WQ_large_FF$SampleDate))
+WQ_sub_FF <- WQ_large_FF %>%
+  filter(Year>2001)
+WQ_sub2_FF <- WQ_large_FF %>%
+  filter(Year>2006)
+WQ_sub3_FF <- WQ_large_FF %>%
+  filter(Year>2011)
+
+ggplot(WQ_large_FF, aes(Datetime, WaterTemperature,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF","#FFC971", "#FA8FFF", "#62FF62","#030C5C","#EFFF4F","#FFE4EA", "#E3B5FF" ,"#B5D7FF", "#B5FFFF", "#C2C1CB", "#C2C1CB", "#ABCDEF")) +  
+  labs(title = "Water Temperature")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub3_FF, aes(Datetime, Conductivity,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF","#FFC971", "#FA8FFF", "#62FF62","#030C5C","#EFFF4F","#FFE4EA", "#E3B5FF" ,"#B5D7FF", "#B5FFFF", "#C2C1CB", "#C2C1CB", "#ABCDEF")) + 
+  labs(title = "Conductivity")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub3_FF, aes(Datetime, DO, colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF","#FFC971", "#FA8FFF", "#62FF62","#030C5C","#EFFF4F","#FFE4EA", "#E3B5FF" ,"#B5D7FF", "#B5FFFF", "#C2C1CB", "#C2C1CB", "#ABCDEF")) +   
+  labs(title = "DO")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub3_FF, aes(Datetime, pH,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF","#FFC971", "#FA8FFF", "#62FF62","#030C5C","#EFFF4F","#FFE4EA", "#E3B5FF" ,"#B5D7FF", "#B5FFFF", "#C2C1CB", "#C2C1CB", "#ABCDEF")) + 
+  labs(title = "pH")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+
+ggplot(WQ_sub3_FF, aes(Datetime, Turbidity,colour = StationCode)) + geom_point() + theme_bw() +
+  scale_colour_manual(values = c("#F3B2FF","#FFC971", "#FA8FFF", "#62FF62","#030C5C","#EFFF4F","#FFE4EA", "#E3B5FF" ,"#B5D7FF", "#B5FFFF", "#C2C1CB", "#C2C1CB", "#ABCDEF")) + 
+  labs(title = "Turbidity")+theme_bw() + 
+  theme(panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust=0.5),
+        axis.text = element_text(size = 11), 
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title = element_text(size = 12),
+        legend.text = element_text(size = 11))
+```
