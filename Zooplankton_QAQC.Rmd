@@ -34,9 +34,8 @@ setwd("C:/Users/cpien/OneDrive - California Department of Water Resources/Work/D
 phys <- read.csv("Data/QC/LT_phys_qc.csv")
 zoop_catch <- read.csv("Data/TblZoopsCatchData.csv")
 zoop_ref <- read.csv("Data/TblZooplankton.csv")
-zoop_tax <- read_csv("Data/TblZoopsLookupV2.csv")
-yb_tax <- read.csv("Data/YB_Taxonomy_2.csv")
-kieco <- read.csv("Data/ZOOP_kieco_taxonomy.csv")
+zoop_tax <- read.csv("Data/YB_TaxonomyTable.csv")
+
 
 # Add and change date formats
 phys$SampleDate<-as.Date(phys$SampleDate,format ="%Y-%m-%d")
@@ -53,7 +52,7 @@ zoop_ref <- zoop_ref %>%
          `50_StartTime`= X50_StartTime,`50_StopTime`= X50_Stoptime,
          `150_SetTime`= X150SetTime,`50_SetTime`= X50_SetTime,
          `50_VolMeso` = X50_VolMeso, `50_SubMeso` = X50_SubMeso,
-         `50_VolMicro` = X50_VolMicro, `50_SubMicro` = X50_SubMicro,)
+         `50_VolMicro` = X50_VolMicro, `50_SubMicro` = X50_SubMicro)
 
 ```
 
@@ -96,12 +95,6 @@ zoop_catch$OrganismID[zoop_catch$OrganismID==71] <- 58
 # yb_tax$OrganismID[yb_tax$OrganismID==71] <- 58
 
 # Change spellings
-# yb_tax$Organism[yb_tax$Organism=="Ergasilus sp."] <- "Ergasilus spp."
-# yb_tax$Organism[yb_tax$Organism=="Skistodiaptomus sp."] <- "Skistodiaptomus spp."
-# yb_tax$Organism[yb_tax$Organism=="Tropocyclops sp."] <- "Tropocyclops spp."
-# yb_tax$Organism[yb_tax$Organism=="Acanthocyclops sp."] <- "Acanthocyclops spp."
-# yb_tax$Organism[yb_tax$Organism=="Pseudochydorus sp."] <- "Pseudochydorus spp."
-# yb_tax$Organism[yb_tax$Organism=="Oithona Spp."] <- "Oithona spp."
 yb_tax$Organism[yb_tax$Organism=="Acanthocyclops Vernalis copepodid"] <- "Acanthocyclops vernalis copepodid"
 #yb_tax$Organism[yb_tax$Organism=="Acanthocyclops Vernalis"] <- "Acanthocyclops vernalis"
 
@@ -144,7 +137,7 @@ catch_zoop <- left_join(catch_zoop0, zoop_tax, by = "OrganismID")
 # Fill in "ZoopNetType" as 150 for all that are not entered
 catch_zoop$ZoopNetType[is.na(catch_zoop$ZoopNetType)] <- 150
   
-# Calculate CPUE (Count/(S*V))
+# Calculate CPUE (Count/(S/V))
 # CPUE differs based on flowmeter used, net size, and meso vs. microzooplankton
   # First calculate the volumes:
     # Volume sampled = (pi * diameter^2/4) * (Flowdiff * rotor constant/999999))
@@ -160,67 +153,53 @@ cz1 <- catch_zoop %>%
          `150_S_micro` = catch_zoop$`SubMicro` * catch_zoop$`Subsample.`/catch_zoop$`VolMicro`,
          `150_S_meso`  = catch_zoop$`SubMeso` * catch_zoop$`Subsample.`/catch_zoop$`VolMeso`) %>%
 mutate(CPUE = ifelse((ZoopNetType == 50 & FlowMeterSpeed == "Regular" & Classification == "Microzooplankton & Nauplii"), 
-                            round(Count/(`50_S_micro` * `50_V_reg`),3), 
+                            round(((Count/`50_S_micro`) /`50_V_reg`),3), 
          ifelse((ZoopNetType == 50 & FlowMeterSpeed == "Regular" & Classification != "Microzooplankton & Nauplii"), 
-                round(Count/(`50_S_meso`*`50_V_reg`),3),
+                round(((Count/`50_S_meso`)/`50_V_reg`),3),
          ifelse((ZoopNetType == 50 & FlowMeterSpeed == "Low" & Classification != "Microzooplankton & Nauplii"),
-                round(Count/(`50_S_meso`*`50_V_low`),3),
+                round(((Count/`50_S_meso`)/`50_V_low`),3),
          ifelse((ZoopNetType == 50 & FlowMeterSpeed == "Low" & Classification == "Microzooplankton & Nauplii"),
-                round(Count/(`50_S_micro` * `50_V_low`),3),
+                round(((Count/`50_S_micro`)/ `50_V_low`),3),
          ifelse((ZoopNetType == 150 & FlowMeterSpeed == "Regular" & Classification == "Microzooplankton & Nauplii"), 
-                            round(Count/(`150_S_micro` * `150_V_reg`),3), 
+                            round(((Count/`150_S_micro`) * `150_V_reg`),3), 
          ifelse((ZoopNetType == 150 & FlowMeterSpeed == "Regular" & Classification != "Microzooplankton & Nauplii"), 
-                round(Count/(`150_S_meso`*`150_V_reg`),3),
+                round(((Count/`150_S_meso`)/`150_V_reg`),3),
          ifelse((ZoopNetType == 150 & FlowMeterSpeed == "Low" & Classification != "Microzooplankton & Nauplii"),
-                round(Count/(`150_S_meso`*`150_V_low`),3),
+                round(((Count/`150_S_meso`)/`150_V_low`),3),
          ifelse((ZoopNetType == 150 & FlowMeterSpeed == "Low" & Classification == "Microzooplankton & Nauplii"),
-                round(Count/(`150_S_micro` * `150_V_low`),3),NA)))))))))
+                round(((Count/`150_S_micro` )/ `150_V_low`),3),NA)))))))))
 
 
 # Merge physical data
-zoop_all_0 <- inner_join(phys,cz1, by = "PhysicalDataID")
-zoop_all_1 <- left_join(zoop_all_0, yb_tax, by = "OrganismID")
+zoop_all_0 <- inner_join(phys,cz1, by = "PhysicalDataID") %>% 
+  mutate(OrganismID = replace(OrganismID, OrganismID==68 & Year>2013, 64))
+
 
 # Rename some columns, remove unnecessary columns
-zoop_all_2 <- zoop_all_1 %>%
-  dplyr::select(-c( X, MicrocystisVisualRank, StartTime:`50_StopTime`, EnteredBy:SlideCount, 
-             ZoopsCatchID, ZoopsCode, Organism.x, Classification.x, Comments,
+zoop_all_2 <- zoop_all_0 %>%
+  dplyr::select(-c(MicrocystisVisualRank, StartTime:`50_StopTime`, EnteredBy:SlideCount, 
+             ZoopsCatchID, ZoopsCode,
             `50_V_reg`, `50_V_low`, `150_V_reg`, `150_V_low`, `50_S_micro`, `50_S_meso`, `150_S_micro`, `150_S_meso`)) %>%
   rename(`150_VolMicro`= VolMicro,
          `150_SubMicro`= SubMicro,
          `150_VolMeso`= VolMeso,
          `150_SubMeso`=SubMeso,
-         GearConditionCode = ConditionCode,
-         Organism = Organism.y,
-         Classification = Classification.y)
-
-# Remove taxonomy and replace with taxonomy from another file (below)
-zoop_all_3 <- zoop_all_2 %>%
-  dplyr::select(-c(46:54))
-
-# Taxonomy from Kieco
-kieco_ed <- kieco %>%
-  filter(str_detect(Databases.present, "ZOOP"))%>%
-  dplyr::select(c(1:16,21:22))
-
-kieco_m <- left_join(zoop_all_3, kieco_ed, by= c("TaxonName")) %>%
-  filter(!(OrganismID==64 & OrganismCode_ZOOP==68)) %>%
-  filter(!(OrganismID==68 & OrganismCode_ZOOP==64))
+         GearConditionCode = ConditionCode)
 
 
 # Rearrange columns
-zoop_all <- kieco_m[, c("PhysicalDataID", "ZoopsDataID", 
-                         "SampleDate", "Year", "Month", "MonthAbb", "Datetime", "SampleTime", "StationCode", 
+zoop_all <- zoop_all_2[, c("PhysicalDataID", "ZoopsDataID",
+                         "SampleDate", "Year", "Month", "MonthAbb", "Datetime", "SampleTime", "StationCode",
                          "WeatherCode", "Tide", "WaterTemperature", "Secchi", "Conductivity", "SpCnd", "pH", "DO","Turbidity",
                          "GearConditionCode","FieldComments", "LabComments",
-                         "FlowMeterSpeed", "150_SetTime", "50_SetTime", 
+                         "FlowMeterSpeed", "150_SetTime", "50_SetTime",
                          "150_ZoopStartMeter", "150_ZoopEndMeter", "50_ZoopStartMeter", "50_ZoopEndMeter",
                          "150_Flowdiff", "50_Flowdiff",
                          "150_VolMeso", "150_SubMeso", "150_VolMicro", "150_SubMicro", 
                          "50_VolMeso", "50_SubMeso", "50_VolMicro", "50_SubMicro",
-                         "Subsample.", "OrganismID", "OrganismCode_ZOOP", "Classification", "Organism", "Phylum",
-                         "Subphylum", "Class", "Subclass", "Infraclass", "Superorder", "Order", 
-                        "Suborder", "Infraorder", "Superfamily", "Family", "Genus", "Species", 
+                         "Subsample.", "OrganismID", "Classification", "Organism", "Phylum",
+                         "Subphylum", "Class", "Subclass", "Infraclass", "Superorder", "Order",
+                        "Suborder", "Infraorder", "Superfamily", "Family", "Genus", "Species",
                          "TaxonName", "TaxonRank", "CommonName", "LifeStage", "Count", "ZoopNetType", "CPUE")]
 
 zoop_all <- zoop_all %>%
