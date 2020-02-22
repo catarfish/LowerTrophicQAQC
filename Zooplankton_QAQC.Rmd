@@ -35,14 +35,22 @@ phys <- read.csv("Data/QC/LT_phys_qc.csv")
 zoop_catch <- read.csv("Data/TblZoopsCatchData.csv")
 zoop_ref <- read.csv("Data/TblZooplankton.csv")
 zoop_tax <- read.csv("Data/YB_TaxonomyTable.csv")
-
+wy <- read.csv("Data/WaterYearType_CDEC.csv")
+# qcsamp is zoop_all (see below) but with field comments flagged. 2019 data were removed manually. Rows were added to account for comments that applied to both 150 and 50 nets. 
+qcsamp <- read.csv("Data/Zoop_Field_QC.csv") 
 
 # Add and change date formats
-phys$SampleDate<-as.Date(phys$SampleDate,format ="%Y-%m-%d")
+phys$SampleDate<-as.Date(phys$SampleDate, format ="%Y-%m-%d")
 phys$Year <- ordered(year(phys$SampleDate))
 phys$Month <- ordered(month(phys$SampleDate))
 phys$MonthAbb <-ordered(phys$MonthAbb,levels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
 phys$Datetime = as.POSIXct(phys$Datetime, format = "%Y-%m-%d %H:%M:%S")
+
+```
+
+## 3. Clean up some columns
+
+```{r filter, results = FALSE, message = FALSE, warning = FALSE}
 
 # Some renaming 
 zoop_ref <- zoop_ref %>%
@@ -54,23 +62,13 @@ zoop_ref <- zoop_ref %>%
          `50_VolMeso` = X50_VolMeso, `50_SubMeso` = X50_SubMeso,
          `50_VolMicro` = X50_VolMicro, `50_SubMicro` = X50_SubMicro)
 
-```
-
-## 3.Check variables, Clean up some columns
-
-```{r filter, results = FALSE, message = FALSE, warning = FALSE}
-str(phys)
-str(zoop_catch)
-
-summary(phys$PhysicalDataID)
-unique(zoop_catch$Classification)
-unique(zoop_catch$Organism)
-unique(zoop_catch$OrganismID)
-unique(zoop_catch$ZoopNetType)
+zoop_catch <- zoop_catch %>%
+  rename(Subsample = Subsample.)
 
 # Get rid of a few columns
 zoop_catch <- zoop_catch[,c(1:3,4:6)]
 phys$Date <- NULL
+phys$X <- NULL
 ```
 
 ## 4. Make changes that need to be made to data
@@ -95,7 +93,7 @@ zoop_catch$OrganismID[zoop_catch$OrganismID==71] <- 58
 # yb_tax$OrganismID[yb_tax$OrganismID==71] <- 58
 
 # Change spellings
-yb_tax$Organism[yb_tax$Organism=="Acanthocyclops Vernalis copepodid"] <- "Acanthocyclops vernalis copepodid"
+#yb_tax$Organism[yb_tax$Organism=="Acanthocyclops Vernalis copepodid"] <- "Acanthocyclops vernalis copepodid"
 #yb_tax$Organism[yb_tax$Organism=="Acanthocyclops Vernalis"] <- "Acanthocyclops vernalis"
 
 # write updated taxonomy table
@@ -127,7 +125,7 @@ zoop_ref <- zoop_ref %>%
 
 ```
 
-## 5. Merge data tables, calculate CPUE, rearrange variables
+## 5. Merge data tables, calculate CPUE
 
 ```{r cpue, message = FALSE, warning = FALSE}
 # Merge datasets for CPUE variables
@@ -148,10 +146,10 @@ cz1 <- catch_zoop %>%
          `50_V_low` = (pi*0.25/4)*(`50_Flowdiff`*57560/999999),
          `150_V_reg` = (pi*0.25/4)*(`150_Flowdiff`*26873/999999),
          `150_V_low` = (pi*0.25/4)*(`150_Flowdiff`*57560/999999),
-         `50_S_micro` = catch_zoop$`50_SubMicro` * catch_zoop$`Subsample.`/catch_zoop$`50_VolMicro`,
-         `50_S_meso`  = catch_zoop$`50_SubMeso` * catch_zoop$`Subsample.`/catch_zoop$`50_VolMeso`,
-         `150_S_micro` = catch_zoop$`SubMicro` * catch_zoop$`Subsample.`/catch_zoop$`VolMicro`,
-         `150_S_meso`  = catch_zoop$`SubMeso` * catch_zoop$`Subsample.`/catch_zoop$`VolMeso`) %>%
+         `50_S_micro` = catch_zoop$`50_SubMicro` * catch_zoop$`Subsample`/catch_zoop$`50_VolMicro`,
+         `50_S_meso`  = catch_zoop$`50_SubMeso` * catch_zoop$`Subsample`/catch_zoop$`50_VolMeso`,
+         `150_S_micro` = catch_zoop$`SubMicro` * catch_zoop$`Subsample`/catch_zoop$`VolMicro`,
+         `150_S_meso`  = catch_zoop$`SubMeso` * catch_zoop$`Subsample`/catch_zoop$`VolMeso`) %>%
 mutate(CPUE = ifelse((ZoopNetType == 50 & FlowMeterSpeed == "Regular" & Classification == "Microzooplankton & Nauplii"), 
                             round(((Count/`50_S_micro`) /`50_V_reg`),3), 
          ifelse((ZoopNetType == 50 & FlowMeterSpeed == "Regular" & Classification != "Microzooplankton & Nauplii"), 
@@ -171,76 +169,281 @@ mutate(CPUE = ifelse((ZoopNetType == 50 & FlowMeterSpeed == "Regular" & Classifi
 
 
 # Merge physical data
+# After 2003 there was no "Other Calanoids" category but it is still being entered
 zoop_all_0 <- inner_join(phys,cz1, by = "PhysicalDataID") %>% 
-  mutate(OrganismID = replace(OrganismID, OrganismID==68 & Year>2013, 64))
+  mutate(OrganismID = replace(OrganismID, OrganismID==68 & Year>2003, 64))
+
+```
 
 
+# Clean up a little more 
+
+```{r Rename and rearrange}
 # Rename some columns, remove unnecessary columns
-zoop_all_2 <- zoop_all_0 %>%
-  dplyr::select(-c(MicrocystisVisualRank, StartTime:`50_StopTime`, EnteredBy:SlideCount, 
-             ZoopsCatchID, ZoopsCode,
-            `50_V_reg`, `50_V_low`, `150_V_reg`, `150_V_low`, `50_S_micro`, `50_S_meso`, `150_S_micro`, `150_S_meso`)) %>%
+zoop_all_1 <- zoop_all_0 %>%
+  dplyr::select(-c(StartTime:`50_StopTime`, EnteredBy:SlideCount, 
+                   ZoopsCatchID, ZoopsCode,`50_V_reg`, `50_V_low`, `150_V_reg`, `150_V_low`, 
+                   `50_S_micro`, `50_S_meso`, `150_S_micro`, `150_S_meso`)) %>%
   rename(`150_VolMicro`= VolMicro,
          `150_SubMicro`= SubMicro,
          `150_VolMeso`= VolMeso,
          `150_SubMeso`=SubMeso,
-         GearConditionCode = ConditionCode)
+          Date = SampleDate,
+          Time = SampleTime) %>%
+   arrange(Year, Date, Time, StationCode, ZoopNetType)
 
 
 # Rearrange columns
-zoop_all <- zoop_all_2[, c("PhysicalDataID", "ZoopsDataID",
-                         "SampleDate", "Year", "Month", "MonthAbb", "Datetime", "SampleTime", "StationCode",
+zoop_all_2 <- zoop_all_1[, c("PhysicalDataID", "ZoopsDataID",
+                         "Date", "Year", "Month", "MonthAbb", "Datetime", "Time", "StationCode",
                          "WeatherCode", "Tide", "WaterTemperature", "Secchi", "Conductivity", "SpCnd", "pH", "DO","Turbidity",
-                         "GearConditionCode","FieldComments", "LabComments",
+                         "MicrocystisVisualRank", "ConditionCode", "FieldComments", "LabComments",
                          "FlowMeterSpeed", "150_SetTime", "50_SetTime",
                          "150_ZoopStartMeter", "150_ZoopEndMeter", "50_ZoopStartMeter", "50_ZoopEndMeter",
                          "150_Flowdiff", "50_Flowdiff",
                          "150_VolMeso", "150_SubMeso", "150_VolMicro", "150_SubMicro", 
                          "50_VolMeso", "50_SubMeso", "50_VolMicro", "50_SubMicro",
-                         "Subsample.", "OrganismID", "Classification", "Organism", "Phylum",
+                         "Subsample", "FieldComments", "LabComments",
+                         "OrganismID", "Classification", "Organism", "Phylum",
                          "Subphylum", "Class", "Subclass", "Infraclass", "Superorder", "Order",
                         "Suborder", "Infraorder", "Superfamily", "Family", "Genus", "Species",
                          "TaxonName", "TaxonRank", "CommonName", "LifeStage", "Count", "ZoopNetType", "CPUE")]
 
-zoop_all <- zoop_all %>%
-  arrange(Year, Month,SampleTime, StationCode, ZoopNetType)
+# Filter down just to SHR/STTD
+
+zoop_all <- zoop_all_2 %>%
+  filter(StationCode == "SHR" | StationCode == "STTD") %>%
+  filter(Year != "2019") %>%
+  drop_na(CPUE)
+
+zoop_all$ZoopNetType <- as.factor(zoop_all$ZoopNetType)
+levels(zoop_all$ZoopNetType) <- c("50_micron", "150_micron")
+
 
 # Write file if you want
 # write.csv(zoop_all, "R_write/zoop_merged.csv")
+```
+
+
+## 6. Start QC flag process
+
+```{r Review-Add water year and other QC file}
+library(mefa)
+
+# Modify water year data frame to include months for joining
+wytype <- as.data.frame(rep(wy, each = 12))
+wytype <- wytype %>%
+  arrange(WY) %>%
+  mutate(Month = ordered(rep(1:12,22))) %>%
+  mutate(Year = ordered(ifelse(Month %in% c(10,11,12), WY+1, WY)))
+
+# Add water year type
+zoop_forreview_0 <- zoop_all %>%
+  left_join(wytype, by = c("Year", "Month")) %>%
+  select(-c(WYType, Index))
+
+# Flag Flowmeter data
+zoop_forreview <- zoop_forreview_0 %>%
+  mutate(QC_Flag1 = ifelse(((`150_Flowdiff` < 400 & `150_Flowdiff` > 199) | 
+                             (`150_Flowdiff` > 9999 & `150_Flowdiff`<20000)), 3, 
+                    ifelse((`150_Flowdiff` <200 | `150_Flowdiff` > 19999), 5, ""))) %>%
+  mutate(QC_Comment1 = ifelse(`150_Flowdiff`< 400, "FMLOW",
+                              ifelse(`150_Flowdiff` > 9999 , "FMHIGH", "")))
+
+## Fix 50 data
+  
+  (`50_Flowdiff` > 99 & `50_Flowdiff` < 200) |
+                             (`50_Flowdiff` > 4999 & `50_Flowdiff`<10000))
+  50_Flowdiff` <100 | `50_Flowdiff` > 9999),
+`50_Flowdiff`< 200
+| `50_Flowdiff` > 4999
+
+# Add QC SAMP info 
+qcsamp_sub <- qcsamp %>% select(c("ZoopsDataID", "QC_Flag2", "QC_Comment3", "ZoopNetType"))
+zoop_forreview <- left_join(zoop_forreview_0, qcsamp_sub, by = c("ZoopsDataID", "ZoopNetType"))
+
+zoop_forreview$Date <- as.Date(zoop_forreview$Date, format = "%m/%d/%y")
 
 ```
 
-## 6. Pare down data to look at outliers
 
-```{r Simplify data}
-# Date format
-zoop_all$SampleDate <- as.Date(zoop_all$SampleDate, format = "%m/%d/%y")
+# Summarize CPUE by sampling event/Net Type. Plot for each year.
 
-# Remove some variables, trim down to just SHR and STTD, adjust for years of interest
-zoop_forreview <- zoop_all %>%
-  filter(StationCode == "SHR" | StationCode == "STTD") %>%
-  filter(Year != "2019") %>%
-  dplyr::select(c(SampleDate, SampleTime, Year, Month, StationCode, GearConditionCode,
-           WeatherCode, WaterTemperature, Secchi, Turbidity, Conductivity, SpCnd, pH, DO,
-           Phylum, Subphylum, Class, Subclass, Infraclass,
-           Superorder, Order, Suborder, Infraorder, Superfamily, Family, Genus, Species, 
-           CommonName, TaxonName, TaxonRank, LifeStage, Classification, Organism,
-           FlowMeterSpeed, `150_Flowdiff`, `50_Flowdiff`,  `150_SetTime`, `50_SetTime`, 
-           ZoopNetType, Count, CPUE, 
-           FieldComments, LabComments, ZoopsDataID))
+```{r}
+## Plots
+ggplot(zoop_forreview, aes(Date, CPUE, col = ZoopNetType))+geom_col()
 
-zoop_forreview <- zoop_forreview %>%
-  drop_na(CPUE)
-zoop_forreview$ZoopNetType <- as.factor(zoop_forreview$ZoopNetType)
-levels(zoop_forreview$ZoopNetType) <- c("50_micron", "150_micron")
+########################################################
+### Summarize total CPUE and count per sampling event for 150-micron
+zoop_onefifty <- zoop_forreview %>%
+  filter(ZoopNetType == "150_micron")  %>%
+  group_by(StationCode, WYClass, Year, Month, Date, ZoopNetType, FlowMeterSpeed, ZoopNetType, FieldComments, LabComments, QC_Flag, QC_Comment3)%>%
+  summarize(ZoopsDataID = median(ZoopsDataID),
+            CPUE.total = sum(CPUE),
+            catch.total = sum(Count),
+            Flowdiff = median(`150_Flowdiff`),
+            SetTime = median(`150_SetTime`))
 
-zoop_pub <- zoop_forreview %>%
-  dplyr::select(-c(FlowMeterSpeed:`50_SetTime`, ZoopsDataID)) %>%
-  arrange(SampleDate, SampleTime, StationCode)
+#### Create plots of CPUE (these go into Plots folder)
 
-write.csv(zoop_pub, "R_write/Zoop_public.csv")
+# List of all of the plots (by station)
+plist <- by(zoop_onefifty, zoop_onefifty$Year, function(i) {
+  p <- ggplot(i)+
+    geom_point(aes(Date, CPUE.total)) +
+    scale_x_date(breaks = "15 days", labels = date_format("%m/%d/%Y")) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+})
+
+# Automatically saves images in list (above) to your working directory folder.
+lapply(names(plist), 
+       function(x) ggsave(filename=paste("Plots/onefifty_",x,".png",sep=""), plot=plist[[x]], bg = "transparent"))
+
+
+##################################################
+### Summarize CPUE per sampling event for 50-micron
+########################################################
+### Summarize CPUE per sampling event  for 150-micron
+zoop_fifty <- zoop_forreview %>%
+  filter(ZoopNetType == "50_micron")  %>%
+  group_by(StationCode, Year, Month, Date, WYClass, ZoopNetType, FlowMeterSpeed, ZoopNetType, FieldComments, LabComments,
+           QC_Flag, QC_Comment3)%>%
+  summarize(ZoopsDataID = median(ZoopsDataID),
+            CPUE.total = sum(CPUE),
+            catch.total = sum(Count),
+            Flowdiff = median(`50_Flowdiff`),
+            SetTime = median(`50_SetTime`))
+
+
+#### Create plots of CPUE (these go into Plots folder)
+# List of all of the plots (by station)
+plist2 <- by(zoop_fifty, zoop_fifty$Year, function(i) {
+  p2 <- ggplot(i)+
+    geom_point(aes(SampleDate, CPUE.total)) +
+    scale_x_date(breaks = "15 days", labels = date_format("%m/%d/%Y")) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+})
+
+# Automatically saves images in list (above) to your working directory folder.
+lapply(names(plist2), 
+       function(x) ggsave(filename=paste("Plots/fifty_",x,".png",sep=""), plot=plist2[[x]], bg = "transparent"))
+```
+
+* Calculate mean, sd, median, IQR, ul, ll for each Year/Station/FlowMeterSpeed Combo.
+* QC_Flag = 3 Suspect, 5 Fail + Replaced, 1 Pass
+* QC_Comments = "FMLOW" Flowmeter difference low "FMHIGH" Flowmeter difference high,
+* "CPUE" CPUE "SAMP" Sampling issue 
+* CPUE: ul = Quantile3 + 1.5*IQR for station, year, flowmeterspeed combo.
+* For 150_micron: FM<401|FM>9999|CPUE>UL suspect FM <201|FM>19999 Fail
+* For 50_micron: FM<201|FM>5000|CPUE>UL suspect FM<101|FM>9999 Fail
+
+```{r Flag data with high CPUE}
+
+
+###################### 150 micron ################################
+##################################################################
+
+### Calculate median, IQR
+onefifty.medians <- zoop_onefifty %>%
+  group_by(StationCode, WYClass, FlowMeterSpeed, ZoopNetType) %>%
+  summarize(CPUE.median = median(CPUE.total),
+            Q1 = quantile(CPUE.total, probs = 0.25), 
+            Q3 = quantile(CPUE.total, probs = 0.75),
+            IQR = Q3-Q1,
+            ul = Q3 + 1.5 * IQR,
+            ll = Q1 - 1.5 * IQR,
+            CPUE.mean = mean(CPUE.total),
+            SD.CPUE = sd(CPUE.total),
+            Flowdiff.mean = mean(Flowdiff),
+            SD.Flowdiff = sd(Flowdiff),
+            n = n())
+
+### Join sample data with medians and mark "check" for anything over the upper limit or below CPUE of 200
+onefiftycheck <- left_join(zoop_onefifty, onefifty.medians) %>%
+  mutate(QC_Flag = ifelse(CPUE.total > ul | (Flowdiff <400 & Flowdiff > 199) | (Flowdiff > 9999 & Flowdiff<20001), "-1", 
+                          ifelse(Flowdiff <200 | Flowdiff > 19999, "-2", "")),
+         QC_Comment1 = ifelse(CPUE.total>ul, "CPUE", ""),
+         QC_Comment2 = ifelse(Flowdiff<401, "FMLOW", 
+                              ifelse(Flowdiff > 9999, "FMHIGH", ""))) %>%
+  dplyr::select(-c(Q1,Q3, SD.CPUE, CPUE.mean))
+
+
+################# 50 Micron #######################
+###################################################
+
+### Calculate median, IQR for 50-zoop net
+fifty.medians <- zoop_fifty %>%
+  group_by(StationCode, WYClass, FlowMeterSpeed, ZoopNetType) %>%
+  summarize(CPUE.median = median(CPUE.total),
+            Q1 = quantile(CPUE.total, probs = 0.25), 
+            Q3 = quantile(CPUE.total, probs = 0.75),
+            IQR = Q3-Q1,
+            ul = Q3 + 1.5 * IQR,
+            ll = Q1 - 1.5 * IQR,
+            CPUE.mean = mean(CPUE.total),
+            SD.CPUE = sd(CPUE.total),
+            Flowdiff.mean = mean(Flowdiff),
+            SD.Flowdiff = sd(Flowdiff),
+            n = n())
+
+### Join sample data with medians and mark "check" for anything over the upper limit or below CPUE of 100
+fiftycheck <- left_join(zoop_fifty, fifty.medians) %>%
+  mutate(QC_Flag = ifelse(CPUE.total > ul | (Flowdiff <200 & Flowdiff > 99) | (Flowdiff > 4999 & Flowdiff<10001), "-1", 
+                          ifelse(Flowdiff <100 | Flowdiff > 4999, "-2", "")),
+         QC_Comment1 = ifelse(CPUE.total>ul, "CPUE", ""),
+         QC_Comment2 = ifelse(Flowdiff<200, "FMLOW", 
+                              ifelse( Flowdiff > 4999, "FMHIGH", ""))) %>%
+  dplyr::select(-c(Q1,Q3,ll, SD.CPUE, CPUE.mean))
+```
+
+
+## 12. Replace flagged values
+```{r Replacement}
+
+### Read in file with flags
+
+zoop_flags <- read.csv("Checkzoopoutliers3.csv")
+
+### Merge in flag, replace, mean, median values with zooplankton data
+
+zoop_replace <- merge(zoop_all, checkoutliers) # Merge zooplankton data with the relevant mean and median values
+zoop_replace_flag <- merge(zoop_replace, zoop_flags, by = "ZoopsDataID") # Merge data with flag and replace columns
+zoop_flag_merge$Replace[is.na(zoop_flag_merge$Replace)] <- "N" # For data not in outlier files, fill "Replace" column with "N" 
+
+### Replace incorrect values
+# New column of flowdiffs. If replace = N, flowdiff does not change. If replace = Y, replace with the mean. 
+zoop_edited <- zoop_flag_merge %>%
+  mutate(Flowdiff2 = ifelse(Replace == "Y", Mean.CPUE, Flowdiff))
 
 ```
+
+
+## Include variables relevant to EDI. 
+```{r EDI/Public}
+
+# zoop_pub <- zoop_forreview %>%
+#   dplyr::select(-c(FlowMeterSpeed:`50_SetTime`, ZoopsDataID)) %>%
+#   arrange(Date, Time, StationCode)
+
+#write.csv(zoop_pub, "R_write/Zoop_public.csv")
+
+
+# EDI/Public
+
+zoop_edi_catch <- zoop_edited %>%
+  select(-c(`150_Flowdiff`, `50_Flowdiff`, ZoopsDataID)) %>%
+  arrange(SampleDate, SampleTime, StationCode, ZoopNetType)
+
+# Write file if you want
+write.csv(zoop_edi_catch_2,"R_write/yolo_zoop_public.csv")
+```
+
+
+
+
+
+
 
 
 ## 7a. Overview of data: net differences
@@ -383,120 +586,6 @@ grid.arrange(tax1, tax2, tax3, tax4, tax5, ncol = 2)
 ```
 
 
-## 8. Summarize CPUE by sampling event/Net Type. Plot for each year. 
-* Calculate mean, sd, median, IQR, ul, ll for each Year/Station/FlowMeterSpeed Combo. 
-
-```{r Total CPUE, message = FALSE, warning = FALSE}
-
-## Plots
-ggplot(zoop_forreview, aes(SampleDate, CPUE, col = ZoopNetType))+geom_col()
-
-########################################################
-### Summarize CPUE per sampling event  for 150-micron
-zoop_onefifty <- zoop_forreview %>%
-  filter(ZoopNetType == "150_micron") %>%
-  group_by(StationCode, Year, Month, SampleDate, FlowMeterSpeed, FieldComments, LabComments)%>%
-  summarize(ZoopsDataID = median(ZoopsDataID),
-            CPUE.total = sum(CPUE),
-            catch.total = sum(Count),
-            Flowdiff = median(`150_Flowdiff`),
-            SetTime = median(`150_SetTime`))
-
-zoop_onefifty$SampleDate <- as.Date(zoop_onefifty$SampleDate, format = "%m/%d/%y")
-zoop_forreview$SampleDate <- as.Date(zoop_forreview$SampleDate, format = "%m/%d/%y")
-
-#### Create plots of CPUE (these go into Plots folder)
-
-# List of all of the plots (by station)
-plist <- by(zoop_onefifty, zoop_onefifty$Year, function(i) {
-  p <- ggplot(i)+
-    geom_point(aes(SampleDate, CPUE.total)) +
-    scale_x_date(breaks = "15 days", labels = date_format("%m/%d/%Y")) +
-    theme_bw() +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1))
-})
-
-# Automatically saves images in list (above) to your working directory folder.
-lapply(names(plist), 
-       function(x) ggsave(filename=paste("Plots/onefifty_",x,".png",sep=""), plot=plist[[x]], bg = "transparent"))
-
-
-### Calculate median, IQR
-onefifty.medians <- zoop_onefifty %>%
-  group_by(StationCode, Year, FlowMeterSpeed) %>%
-  summarize(CPUE.median = median(CPUE.total),
-            Q1 = quantile(CPUE.total, probs = 0.25), 
-            Q3 = quantile(CPUE.total, probs = 0.75),
-            IQR = Q3-Q1,
-            ul = Q3 + 1.5 * IQR,
-            ll = Q1 - 1.5 * IQR,
-            CPUE.mean = mean(CPUE.total),
-            SD.CPUE = sd(CPUE.total),
-            Flowdiff.mean = mean(Flowdiff),
-            SD.Flowdiff = sd(Flowdiff),
-            n = n())
-
-### Join sample data with medians and mark "check" for anything over the upper limit or below CPUE of 200
-onefiftycheck <- left_join(zoop_onefifty, onefifty.medians) %>%
-  mutate(check = ifelse(CPUE.total > ul | Flowdiff <401 | Flowdiff > 10000, "Y", "N"),
-         NetSize = "150_micron") %>%
-  filter(check == "Y")%>%
-  dplyr::select(-c(Q1,Q3))
-
-
-##################################################
-### Summarize CPUE per sampling event for 50-micron
-
-zoop_fifty$SampleDate <- as.Date(zoop_fifty$SampleDate, format = "%m/%d/%y")
-
-zoop_fifty <- zoop_forreview %>%
-  filter(ZoopNetType == "50_micron")%>%
-  #filter(CPUE<5000) %>%
-  group_by(StationCode, Year, Month, SampleDate, FlowMeterSpeed, FieldComments, LabComments)%>%
-  summarize(ZoopsDataID = median(ZoopsDataID),
-            CPUE.total = sum(CPUE),
-            catch.total = sum(Count),
-            Flowdiff = median(`50_Flowdiff`),
-            SetTime = median(`50_SetTime`))
-
-
-#### Create plots of CPUE (these go into Plots folder)
-# List of all of the plots (by station)
-plist2 <- by(zoop_fifty, zoop_fifty$Year, function(i) {
-  p2 <- ggplot(i)+
-    geom_point(aes(SampleDate, CPUE.total)) +
-    scale_x_date(breaks = "15 days", labels = date_format("%m/%d/%Y")) +
-    theme_bw() +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1))
-})
-
-# Automatically saves images in list (above) to your working directory folder.
-lapply(names(plist2), 
-       function(x) ggsave(filename=paste("Plots/fifty_",x,".png",sep=""), plot=plist2[[x]], bg = "transparent"))
-
-### Calculate median, IQR for 50-zoop net
-fifty.medians <- zoop_fifty %>%
-  group_by(StationCode, Year, FlowMeterSpeed) %>%
-  summarize(CPUE.median = median(CPUE.total),
-            Q1 = quantile(CPUE.total, probs = 0.25), 
-            Q3 = quantile(CPUE.total, probs = 0.75),
-            IQR = Q3-Q1,
-            ul = Q3 + 1.5 * IQR,
-            ll = Q1 - 1.5 * IQR,
-            CPUE.mean = mean(CPUE.total),
-            SD.CPUE = sd(CPUE.total),
-            Flowdiff.mean = mean(Flowdiff),
-            SD.Flowdiff = sd(Flowdiff),
-            n = n())
-
-### Join sample data with medians and mark "check" for anything over the upper limit or below CPUE of 100
-fiftycheck <- left_join(zoop_fifty, fifty.medians) %>%
-  mutate(check = ifelse(CPUE.total > ul | Flowdiff <201 | Flowdiff >5000, "Y", "N"),
-         NetSize = "50_micron") %>%
-  filter(check == "Y")%>%
-  dplyr::select(-c(Q1,Q3,ll))
-
-```
 
 
 ### ANOVAs
@@ -752,38 +841,5 @@ checkoutliers2 <- left_join(checkoutliers, dayflowF) %>%
 # Write outliers file
 write.csv(checkoutliers2, "R_write/Checkzoopoutliers.csv")
 
-```
-
-## 12. Replace flagged values
-```{r Replacement}
-
-### Read in file with flags
-
-zoop_flags <- read.csv("Checkzoopoutliers3.csv")
-
-### Merge in flag, replace, mean, median values with zooplankton data
-
-zoop_replace <- merge(zoop_all, checkoutliers) # Merge zooplankton data with the relevant mean and median values
-zoop_replace_flag <- merge(zoop_replace, zoop_flags, by = "ZoopsDataID") # Merge data with flag and replace columns
-zoop_flag_merge$Replace[is.na(zoop_flag_merge$Replace)] <- "N" # For data not in outlier files, fill "Replace" column with "N" 
-
-### Replace incorrect values
-# New column of flowdiffs. If replace = N, flowdiff does not change. If replace = Y, replace with the mean. 
-zoop_edited <- zoop_flag_merge %>%
-  mutate(Flowdiff2 = ifelse(Replace == "Y", Mean.CPUE, Flowdiff))
-
-```
-
-
-## Include variables relevant to EDI. 
-```{r EDI/Public}
-# EDI/Public
-
-zoop_edi_catch <- zoop_edited %>%
-  select(-c(`150_Flowdiff`, `50_Flowdiff`, ZoopsDataID)) %>%
-  arrange(SampleDate, SampleTime, StationCode, ZoopNetType)
-
-# Write file if you want
-write.csv(zoop_edi_catch_2,"R_write/yolo_zoop_public.csv")
 ```
 
