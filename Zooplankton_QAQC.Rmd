@@ -89,7 +89,6 @@ zoop_catch$OrganismID[zoop_catch$OrganismID==71] <- 58
 # Two records mislabeled as OrganismID = 68 (an old code) - change to 64
 zoop_catch$OrganismID[zoop_catch$ZoopsDataID==882] <- 64
 zoop_catch$OrganismID[zoop_catch$ZoopsDataID==1005] <- 64
-zoop_catch <- zoop_catch %>% mutate(OrganismID = replace(OrganismID, OrganismID==68 & Year>2003, 64))
  
 # Add ZoopNetType to a few 50-micron entries
 zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==8663] <- 50
@@ -174,8 +173,8 @@ cz2 <- cz1 %>%
 zoop_all_0 <- inner_join(phys,cz2, by = "PhysicalDataID") %>% 
   mutate(OrganismID = replace(OrganismID, OrganismID==68 & Year>2003, 64))
 
-```
 
+```
 
 # Clean up a little more 
 
@@ -223,6 +222,72 @@ levels(zoop_all$ZoopNetType) <- c("50_micron", "150_micron")
 # Write file if you want
 # write.csv(zoop_all, "R_write/zoop_merged.csv")
 ```
+
+
+### Visualize Flowmeter Values
+
+## 9. Look at Flowmeter data
+
+```{r Flow, message = FALSE, warning = FALSE}
+
+# Remove rows with no flowdiff value
+Flowmeter <- zoop_all %>%
+  filter(!is.na(Flowdiff)) %>%
+  filter(!is.na(FlowMeterSpeed))
+
+### Histogram by net type
+ggplot(Flowmeter, aes(Flowdiff)) + geom_histogram(binwidth = 500) +
+  facet_wrap(~ZoopNetType) + theme_bw()
+
+### Make datasets
+# Look at flow values by month
+Flow_yr_month <- Flowmeter %>%
+  group_by(ZoopNetType, Year, MonthAbb) %>%
+  select(ZoopNetType,Year,MonthAbb,Flowdiff) %>%
+  summarize(max.flow = max(Flowdiff),
+            median.flow = median(Flowdiff),
+            min.flow = min(Flowdiff))
+
+# Look at flow values by month
+Flow_month <- Flowmeter %>%
+  group_by(ZoopNetType,MonthAbb) %>%
+  summarize(max.flow = max(Flowdiff),
+            median.flow = median(Flowdiff),
+            min.flow = min(Flowdiff))
+
+### Boxplots
+ggplot(Flowmeter, aes(MonthAbb, Flowdiff)) + 
+  geom_boxplot(fill = "#26bb11") + labs(title = "Boxplot: All Flows") + theme_bw() + facet_wrap(~ZoopNetType)
+
+ggplot(Flow_yr_month, aes(MonthAbb, median.flow)) + geom_boxplot(fill = "#00acee") + 
+  facet_wrap(~ZoopNetType) +labs(title = "Boxplot: Median flow over multiple years") + theme_bw()
+
+
+### Table of values
+# Calculate median, MAD, lower and upper ranges for each day
+Flow.sum <- Flowmeter %>%
+  filter(StationCode == "STTD" | StationCode == "SHR") %>%
+  group_by(StationCode, ZoopNetType, FlowMeterSpeed) %>%
+   summarize(min.Flowdiff = min(Flowdiff),
+             max.Flowdiff = max(Flowdiff),
+             median.Flowdiff = median(Flowdiff))
+
+kable(Flow.sum) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+```
+
+## 10. Calculate summary stats and IQR for flowmeter readings
+
+```{r IQR Flowmeter}
+
+
+
+
+```
+
+
+
 
 
 ## 6a. Start QC flag process:
@@ -318,8 +383,8 @@ CPUE_quantiles <- CPUE_sum %>%
             IQR = Q3-Q1,
             ul = Q3 + 1.5 * IQR,
             ll = Q1 - 1.5 * IQR,
-            n = n()) #%>%
-  #select(-c(Q1:IQR, ll, n))
+            n = n()) %>%
+  select(-c(Q1:IQR, ll, n))
 
 
 # Merge original zoop review data with quantile information
@@ -388,6 +453,9 @@ zoop_final <- zoop_replaced[,c("Date", "Time", "StationCode", "WeatherCode", "Ti
                                "OrganismID", "Classification",  "TaxonName", "TaxonRank", "CommonName", "LifeStage",
                                "Count", "CPUE", "CPUE_ed", "QC_Flag1", "QC_Comment1", "QC_Flag2", "QC_Comment2", "QC_Flag3",
                                "QC_Comment3")]
+zoop_final <- zoop_final %>%
+  arrange(Date, Time, StationCode, Classification, TaxonName)
+  
   
 
 
@@ -420,17 +488,6 @@ fives <- zoop_forreview_flag %>%
 ## Plots
 ggplot(zoop_forreview, aes(Date, CPUE, col = ZoopNetType))+geom_col()
 
-########################################################
-### Summarize total CPUE and count per sampling event for 150-micron
-zoop_onefifty <- zoop_forreview %>%
-  filter(ZoopNetType == "150_micron")  %>%
-  group_by(StationCode, WYClass, Year, Month, Date, ZoopNetType, FlowMeterSpeed, ZoopNetType, FieldComments, LabComments, QC_Flag, QC_Comment3)%>%
-  summarize(ZoopsDataID = median(ZoopsDataID),
-            CPUE.total = sum(CPUE),
-            catch.total = sum(Count),
-            Flowdiff = median(`150_Flowdiff`),
-            SetTime = median(`150_SetTime`))
-
 #### Create plots of CPUE (these go into Plots folder)
 
 # List of all of the plots (by station)
@@ -446,20 +503,6 @@ plist <- by(zoop_onefifty, zoop_onefifty$Year, function(i) {
 lapply(names(plist), 
        function(x) ggsave(filename=paste("Plots/onefifty_",x,".png",sep=""), plot=plist[[x]], bg = "transparent"))
 
-
-##################################################
-### Summarize CPUE per sampling event for 50-micron
-########################################################
-### Summarize CPUE per sampling event  for 150-micron
-zoop_fifty <- zoop_forreview %>%
-  filter(ZoopNetType == "50_micron")  %>%
-  group_by(StationCode, Year, Month, Date, WYClass, ZoopNetType, FlowMeterSpeed, ZoopNetType, FieldComments, LabComments,
-           QC_Flag, QC_Comment3)%>%
-  summarize(ZoopsDataID = median(ZoopsDataID),
-            CPUE.total = sum(CPUE),
-            catch.total = sum(Count),
-            Flowdiff = median(`50_Flowdiff`),
-            SetTime = median(`50_SetTime`))
 
 
 #### Create plots of CPUE (these go into Plots folder)
@@ -477,516 +520,5 @@ lapply(names(plist2),
        function(x) ggsave(filename=paste("Plots/fifty_",x,".png",sep=""), plot=plist2[[x]], bg = "transparent"))
 ```
 
-* Calculate mean, sd, median, IQR, ul, ll for each Year/Station/FlowMeterSpeed Combo.
-* QC_Flag = 3 Suspect, 5 Fail + Replaced, 1 Pass
-* QC_Comments = "FMLOW" Flowmeter difference low "FMHIGH" Flowmeter difference high,
-* "CPUE" CPUE "SAMP" Sampling issue 
-* CPUE: ul = Quantile3 + 1.5*IQR for station, year, flowmeterspeed combo.
-* For 150_micron: FM<401|FM>9999|CPUE>UL suspect FM <201|FM>19999 Fail
-* For 50_micron: FM<201|FM>5000|CPUE>UL suspect FM<101|FM>9999 Fail
 
-```{r Flag data with high CPUE}
-
-
-###################### 150 micron ################################
-##################################################################
-
-### Calculate median, IQR
-onefifty.medians <- zoop_onefifty %>%
-  group_by(StationCode, WYClass, FlowMeterSpeed, ZoopNetType) %>%
-  summarize(CPUE.median = median(CPUE.total),
-            Q1 = quantile(CPUE.total, probs = 0.25), 
-            Q3 = quantile(CPUE.total, probs = 0.75),
-            IQR = Q3-Q1,
-            ul = Q3 + 1.5 * IQR,
-            ll = Q1 - 1.5 * IQR,
-            CPUE.mean = mean(CPUE.total),
-            SD.CPUE = sd(CPUE.total),
-            Flowdiff.mean = mean(Flowdiff),
-            SD.Flowdiff = sd(Flowdiff),
-            n = n())
-
-### Join sample data with medians and mark "check" for anything over the upper limit or below CPUE of 200
-onefiftycheck <- left_join(zoop_onefifty, onefifty.medians) %>%
-  mutate(QC_Flag = ifelse(CPUE.total > ul | (Flowdiff <400 & Flowdiff > 199) | (Flowdiff > 9999 & Flowdiff<20001), "-1", 
-                          ifelse(Flowdiff <200 | Flowdiff > 19999, "-2", "")),
-         QC_Comment1 = ifelse(CPUE.total>ul, "CPUE", ""),
-         QC_Comment2 = ifelse(Flowdiff<401, "FMLOW", 
-                              ifelse(Flowdiff > 9999, "FMHIGH", ""))) %>%
-  dplyr::select(-c(Q1,Q3, SD.CPUE, CPUE.mean))
-
-
-################# 50 Micron #######################
-###################################################
-
-### Calculate median, IQR for 50-zoop net
-fifty.medians <- zoop_fifty %>%
-  group_by(StationCode, WYClass, FlowMeterSpeed, ZoopNetType) %>%
-  summarize(CPUE.median = median(CPUE.total),
-            Q1 = quantile(CPUE.total, probs = 0.25), 
-            Q3 = quantile(CPUE.total, probs = 0.75),
-            IQR = Q3-Q1,
-            ul = Q3 + 1.5 * IQR,
-            ll = Q1 - 1.5 * IQR,
-            CPUE.mean = mean(CPUE.total),
-            SD.CPUE = sd(CPUE.total),
-            Flowdiff.mean = mean(Flowdiff),
-            SD.Flowdiff = sd(Flowdiff),
-            n = n())
-
-### Join sample data with medians and mark "check" for anything over the upper limit or below CPUE of 100
-fiftycheck <- left_join(zoop_fifty, fifty.medians) %>%
-  mutate(QC_Flag = ifelse(CPUE.total > ul | (Flowdiff <200 & Flowdiff > 99) | (Flowdiff > 4999 & Flowdiff<10001), "-1", 
-                          ifelse(Flowdiff <100 | Flowdiff > 4999, "-2", "")),
-         QC_Comment1 = ifelse(CPUE.total>ul, "CPUE", ""),
-         QC_Comment2 = ifelse(Flowdiff<200, "FMLOW", 
-                              ifelse( Flowdiff > 4999, "FMHIGH", ""))) %>%
-  dplyr::select(-c(Q1,Q3,ll, SD.CPUE, CPUE.mean))
-```
-
-
-## 12. Replace flagged values
-```{r Replacement}
-
-### Read in file with flags
-
-zoop_flags <- read.csv("Checkzoopoutliers3.csv")
-
-### Merge in flag, replace, mean, median values with zooplankton data
-
-zoop_replace <- merge(zoop_all, checkoutliers) # Merge zooplankton data with the relevant mean and median values
-zoop_replace_flag <- merge(zoop_replace, zoop_flags, by = "ZoopsDataID") # Merge data with flag and replace columns
-zoop_flag_merge$Replace[is.na(zoop_flag_merge$Replace)] <- "N" # For data not in outlier files, fill "Replace" column with "N" 
-
-### Replace incorrect values
-# New column of flowdiffs. If replace = N, flowdiff does not change. If replace = Y, replace with the mean. 
-zoop_edited <- zoop_flag_merge %>%
-  mutate(Flowdiff2 = ifelse(Replace == "Y", Mean.CPUE, Flowdiff))
-
-```
-
-
-## Include variables relevant to EDI. 
-```{r EDI/Public}
-
-# zoop_pub <- zoop_forreview %>%
-#   dplyr::select(-c(FlowMeterSpeed:`50_SetTime`, ZoopsDataID)) %>%
-#   arrange(Date, Time, StationCode)
-
-#write.csv(zoop_pub, "R_write/Zoop_public.csv")
-
-
-# EDI/Public
-
-zoop_edi_catch <- zoop_edited %>%
-  select(-c(`150_Flowdiff`, `50_Flowdiff`, ZoopsDataID)) %>%
-  arrange(SampleDate, SampleTime, StationCode, ZoopNetType)
-
-# Write file if you want
-write.csv(zoop_edi_catch_2,"R_write/yolo_zoop_public.csv")
-```
-
-
-
-
-
-
-
-
-## 7a. Overview of data: net differences
-
-```{r Organisms Plot, echo = FALSE, message = FALSE, warning = FALSE}
-
-# Net type and year
-ggplot(zoop_all, aes(Year, CPUE, fill = ZoopNetType)) + geom_col()
-
-# Make some datasets
-calanoid <- zoop_cpue %>% filter(Order == "Calanoida")
-cladocera <- zoop_cpue %>% filter(Suborder == "Cladocera")
-cyclopoid <- zoop_cpue %>% filter(Order == "Cyclopoida")
-macro <- zoop_cpue %>% filter(Classification == "Macrozooplankton")
-micro <- zoop_cpue %>% filter(Classification == "Microzooplankton & Nauplii")
-
-# Look at organisms - CPUE 
-ggplot(zoop_cpue, aes(x=Classification, y = CPUE, fill =NetType)) + 
-  geom_col(position = "dodge") +
-    scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) + labs(title = "Classification")+
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-```
-
-## 7b. Look at organisms by taxonomic categories
-```{r Organisms Plot big, warning = FALSE, message = FALSE, fig.width=12, fig.height=16}
-
-# Look at each taxonomic category
-t1 <- ggplot(zoop_cpue, aes(x=Phylum, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="Sum CPUE by Phylum") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),
-                    axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-t2 <- ggplot(zoop_cpue, aes(x=Class, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="Sum CPUE by Class") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-t3 <- ggplot(zoop_cpue, aes(x=Subclass, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="Sum CPUE by SubClass") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-zoop_order <- zoop_cpue %>%
-  filter(!is.na(Order))
-t4 <- ggplot(zoop_order, aes(x=Order, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="CPUE by Order") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-zoop_family <- zoop_cpue %>%
-  filter(!is.na(Family))
-t5 <- ggplot(zoop_family, aes(x=Family, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="CPUE by Family") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 9), axis.title = element_text(size = 11),axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-zoop_genus <- zoop_cpue %>%
-  filter(!is.na(Genus))
-t6 <- ggplot(zoop_genus, aes(x=Genus, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="CPUE by Genus") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 8), axis.title = element_text(size = 11),axis.title.x = element_blank(),axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-# Compare changes: Organism vs.Taxon
-# Calanoid species
-org1 <- ggplot(calanoid, aes(x=Organism, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") + labs(title = "Calanoid - Organism") +  
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-tax1 <- ggplot(calanoid, aes(x=TaxonName, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") + labs(title = "Calanoid - Taxon") +  
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-# Cladocera species
-org2 <- ggplot(cladocera, aes(x=Organism, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  labs(title = "Cladocera - Organism")+
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-tax2 <- ggplot(cladocera, aes(x=TaxonName, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  labs(title = "Cladocera - Taxon")+
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-# Cyclopoid species
-org3 <- ggplot(cyclopoid, aes(x=Organism, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  labs(title = "Cylopoid - Organism")+
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-tax3 <- ggplot(cyclopoid, aes(x=TaxonName, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  labs(title = "Cylopoid - Taxon")+
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-# Macrozooplankton
-org4 <- ggplot(macro, aes(x=Organism, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  labs(title = "Macrozooplankton - Organism")+
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1))
-
-tax4 <- ggplot(macro, aes(x=TaxonName, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  labs(title = "Macrozooplankton - Taxon")+
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1))
-
-# Microzooplankton
-org5 <- ggplot(micro, aes(x=Organism, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  labs(title = "Microzooplankton - Organism")+
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1))
-
-tax5 <- ggplot(micro, aes(x=TaxonName, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  labs(title = "Microzooplankton - Taxon")+
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1))
-
-grid.arrange(t1, t2, t3, t4, t5, t6, ncol = 2)
-grid.arrange(org1, org2, org3, org4, org5, ncol = 2)
-grid.arrange(tax1, tax2, tax3, tax4, tax5, ncol = 2)
-```
-
-
-
-
-### ANOVAs
-```{r ANOVA}
-library(car)
-
-################# STTD ##################
-### Plot data
-zoop_150_sttd <- zoop_onefifty %>%
-  filter(CPUE.total < 3000000) %>%
-  filter(StationCode == "STTD") %>%
-  mutate(Flowdiff_s = Flowdiff/SetTime)
-
-zoop_150_sttd_reg <- zoop_150_sttd %>%
-    filter(FlowMeterSpeed == "Regular")
-
-zoop_150_sttd_low <- zoop_150_sttd %>%
-    filter(FlowMeterSpeed == "Low")
-
-# CPUE plots
-ggplot(zoop_150_sttd_reg, aes(Year, CPUE.total))+geom_boxplot()
-
-# Flowdiff/settime plots
-ggplot(zoop_150_sttd_reg, aes(Year, Flowdiff_s))+geom_boxplot()
-
-
-### Run ANOVAs
-sttd.aov.cp.r <- aov(CPUE.total~Year, data = zoop_150_sttd_reg)
-summary(sttd.aov.cp.r)
-
-TukeyHSD(sttd.aov.cp.r)
-
-####### CPUE Zoop_150_STTD_Reg #######
-### Run ANOVAs
-sttd.aov.cp.r <- aov(CPUE.total~Year, data = zoop_150_sttd_reg)
-summary(sttd.aov.cp.r)
-
-TukeyHSD(sttd.aov.cp.r)
-
-### Check assumptions
-# Homogeneity of variances
-plot(sttd.aov.cp.r, 1)
-leveneTest(CPUE.total ~ Year, data = zoop_150_sttd_reg)
-
-  # Normality
-plot(sttd.aov.cp.r, 2)
-sttd_residuals_cp_r <- residuals(object = sttd.aov.cp.r)
-shapiro.test(x = sttd_residuals )
-
-######## Flowdiff Zoop_150_STTD_Reg #######
-
-### Run ANOVAs
-sttd.aov.f.r <- aov(Flowdiff_s~Year, data = zoop_150_sttd_reg)
-summary(sttd.aov.f.r)
-
-TukeyHSD(sttd.aov.f.r)
-
-### Check assumptions
-
-  # Homogeneity of variances
-plot(sttd.aov.f.r, 1)
-leveneTest(Flowdiff_s ~ Year, data = zoop_150_sttd_reg)
-
-  # Normality
-plot(sttd.aov.f.r, 2)
-sttd_residuals_f_r <- residuals(object = sttd.aov.f.r)
-shapiro.test(x = sttd_residuals_f_r)
-
-######## CPUE Zoop_150_STTD_Low #######
-
-ggplot(zoop_150_sttd_low, aes(Year, CPUE.total))+geom_boxplot()
-ggplot(zoop_150_sttd_low, aes(Year, Flowdiff_s))+geom_boxplot()
-
-### Run ANOVAs
-sttd.aov.cp.l <- aov(CPUE.total~Year, data = zoop_150_sttd_low)
-summary(sttd.aov.cp.l)
-
-TukeyHSD(sttd.aov.cp.l)
-
-### Check assumptions
-
-  # Homogeneity of variances
-plot(sttd.aov.cp.l, 1)
-leveneTest(CPUE.total ~ Year, data = zoop_150_sttd_low)
-
-  # Normality
-plot(sttd.aov.cp.l, 2)
-sttd_residuals_cp_l <- residuals(object = sttd.aov.cp.l)
-shapiro.test(x = sttd_residuals_cp_l)
-
-######## Flowdiff Zoop_150_STTD_Low #######
-
-### Run ANOVAs
-sttd.aov.f.l <- aov(Flowdiff_s~Year, data = zoop_150_sttd_low)
-summary(sttd.aov.f.l)
-
-TukeyHSD(sttd.aov.f.l)
-
-### Check assumptions
-
-  # Homogeneity of variances
-plot(sttd.aov.f.l, 1)
-leveneTest(Flowdiff_s ~ Year, data = zoop_150_sttd_low)
-
-  # Normality
-plot(sttd.aov.f.l, 2)
-sttd_residuals_f_l <- residuals(object = sttd.aov.f.l)
-shapiro.test(x = sttd_residuals_f_l)
-
-################# SHR ##################
-
-zoop_shr <- zoop_onefifty %>%
-  filter(CPUE.total < 1000000)%>%
-  filter(StationCode == "SHR")%>%
-  filter(FlowMeterSpeed == "Low") %>%
-  mutate(Flowdiff_s = Flowdiff/SetTime)
-
-ggplot(zoop_shr, aes(Year, CPUE.total)) + geom_boxplot()
-ggplot(zoop_shr, aes(Year, Flowdiff_s)) + geom_boxplot()
-
-### Run ANOVA
-shr.aov <- aov(Flowdiff_s~Year, data = zoop_shr)
-summary(shr.aov)
-
-TukeyHSD(shr.aov)
-### Check assumptions
-
-  # Homogeneity of variances
-plot(shr.aov, 1) 
-leveneTest(CPUE.total ~ Year, data = zoop_shr)
-
-  # Normality
-plot(shr.aov, 2)
-shr_residuals <- residuals(object = shr.aov)
-shapiro.test(x = shr_residuals )
-
-### Kruskal-Wallis
-kruskal.test(CPUE.total~Year, data = zoop_shr)
-
-
-```
-
-
-## 9. Look at Flowmeter data
-
-```{r Flow, message = FALSE, warning = FALSE}
-
-# Remove rows with no flowdiff value
-Flowmeter <- zoop_all %>%
-  gather(`150_Flowdiff`, `50_Flowdiff`, key = "NetType", value = "Flowdiff") %>%
-  filter(!is.na(Flowdiff)) %>%
-  filter(!is.na(FlowMeterSpeed))
-
-# Histogram by net type
-ggplot(Flowmeter, aes(Flowdiff)) + geom_histogram(binwidth = 500) +
-  facet_wrap(~NetType) + theme_bw()
-
-# Look at flow values by month
-Flow_yr_month <- Flowmeter %>%
-  group_by(NetType, Year, MonthAbb) %>%
-  select(NetType,Year,MonthAbb,Flowdiff) %>%
-  summarize(max.flow = max(Flowdiff),
-            median.flow = median(Flowdiff),
-            min.flow = min(Flowdiff))
-
-# Look at flow values by month
-Flow_month <- Flowmeter %>%
-  group_by(NetType,MonthAbb) %>%
-  summarize(max.flow = max(Flowdiff),
-            median.flow = median(Flowdiff),
-            min.flow = min(Flowdiff))
-
-# Boxplots
-ggplot(Flowmeter, aes(MonthAbb, Flowdiff)) + 
-  geom_boxplot(fill = "#26bb11") + labs(title = "Boxplot: All Flows") + theme_bw() + facet_wrap(~NetType)
-
-ggplot(Flow_yr_month, aes(MonthAbb, median.flow)) + geom_boxplot(fill = "#00acee") + 
-  facet_wrap(~NetType) +labs(title = "Boxplot: Median flow over multiple years") + theme_bw()
-
-# List of all flow diferences by station and date
-Flow_sta_comments <- Flowmeter %>%
-  filter(StationCode %in% c("STTD", "SHR")) %>%
-  select(ZoopsDataID, StationCode, Year, SampleDate, MonthAbb, NetType, Flowdiff, FieldComments) %>%
-  group_by(ZoopsDataID, StationCode, NetType,Year, SampleDate, MonthAbb, Flowdiff, FieldComments) %>%
-  arrange(StationCode,NetType,Year,SampleDate,Flowdiff) %>%
-  distinct(SampleDate,StationCode)
-
-```
-
-## 10. Calculate summary stats and IQR for flowmeter readings
-
-```{r IQR Flowmeter}
-
-# Calculate median, MAD, lower and upper ranges for each day
-Flow.sum <- Flowmeter %>%
-  filter(StationCode == "STTD" | StationCode == "SHR") %>%
-  group_by(StationCode, NetType, FlowMeterSpeed) %>%
-   summarize(min.Flowdiff = min(Flowdiff),
-             max.Flowdiff = max(Flowdiff))
-
-# Calculate median, MAD, lower and upper ranges for each day
-Flow.IQR <- Flowmeter %>%
-  filter(StationCode == "STTD" | StationCode == "SHR") %>%
-  group_by(StationCode, NetType, FlowMeterSpeed) %>%
-   summarize(Q1 = quantile(Flowdiff, probs = 0.25), 
-            Q3 = quantile(Flowdiff, probs = 0.75),
-            IQR = Q3-Q1,
-            ul = Q3 + 1.5 * IQR,
-            ll = Q1 - 1.5 * IQR)
-kable(Flow.sum) %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
-
-kable(Flow.IQR) %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
-
-```
-
-## 11. Read dayflow data
-```{r incorporate dayflow}
-
-dayflow <- read.csv("Data/Flow/Yolo_dayflow_compiled.csv")
-
-# Extract date from flow dataset
-dayflow <- dayflow %>%
-  rename(SampleDate = Date) %>%
-#mutate(Day = substr(Date, start = 1, stop = 2)) %>%
-  #mutate(SampleDate = (paste(Year, Mo, Day, sep = "-"))) %>%
-  arrange(Year)
-
-dayflow$SampleDate <- as.Date(dayflow$SampleDate, format = "%Y-%m-%d")
-dayflow$Month <- ordered(month(dayflow$SampleDate))
-dayflow$Year <- ordered(dayflow$Year)
-dayflow$Day <- as.character(day(dayflow$SampleDate))
-
-# Look at flow data
-ggplot(dayflow, aes(SampleDate, Flow)) + 
-  geom_point()
-
-ggplot(dayflow, aes(Month, Flow)) + 
-  geom_boxplot()
-
-# There are several repeats
-dayflowF <- dayflow %>%
-  distinct(SampleDate, .keep_all = TRUE)
-
-# Combine 50-150 CPUE outliers with dayflow. 
-checkoutliers <- rbind(fiftycheck,onefiftycheck)
-checkoutliers$Day <- as.character(day(checkoutliers$SampleDate))
-checkoutliers2 <- left_join(checkoutliers, dayflowF) %>%
-  arrange(StationCode, SampleDate) %>%
-  dplyr:: select(-c(Day, X, Mo, check, IQR, ll))
-
-# Write outliers file
-write.csv(checkoutliers2, "R_write/Checkzoopoutliers.csv")
-
-```
 
