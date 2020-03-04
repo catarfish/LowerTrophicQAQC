@@ -41,9 +41,9 @@ wy <- read.csv("Data/WaterYearType_CDEC.csv") # Water Years from CDEC
 qcsamp <- read.csv("Data/Zoop_Field_QC.csv")  # Separately sorted through comments to determine sampling flags
 
 # Add and change date formats
-phys$SampleDate<-as.Date(phys$SampleDate, format ="%Y-%m-%d")
-phys$Year <- ordered(year(phys$SampleDate))
-phys$Month <- ordered(month(phys$SampleDate))
+phys$Date<-as.Date(phys$Date, format ="%Y-%m-%d")
+phys$Year <- ordered(year(phys$Date))
+phys$Month <- ordered(month(phys$Date))
 phys$MonthAbb <-ordered(phys$MonthAbb,levels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
 phys$Datetime = as.POSIXct(phys$Datetime, format = "%Y-%m-%d %H:%M:%S")
 
@@ -69,7 +69,6 @@ zoop_catch <- zoop_catch %>%
 
 # Get rid of a few columns
 zoop_catch <- zoop_catch[,c(1:3,4:6)]
-phys$Date <- NULL
 phys$X <- NULL
 zoop_ref$X <- NULL
 zoop_ref$QC_Flag <- NULL
@@ -120,6 +119,7 @@ zoop_ref <- zoop_ref %>%  mutate(`150_Flowdiff` = (`150_ZoopEndMeter`-`150_ZoopS
 
 ```{r cpue, message = FALSE, warning = FALSE}
 # Merge datasets for CPUE variables
+# Only include samples that have a linking ZoopsDataID
 catch_zoop0 <- inner_join(zoop_ref, zoop_catch, by = "ZoopsDataID")
 
 # Fill in "ZoopNetType" as 150 for all that are not entered
@@ -193,9 +193,7 @@ zoop_all_1 <- zoop_all_0 %>%
          VolMeso= VolMeso1,
          SubMeso=SubMeso1,
          StartTime = StartTime1,
-         StopTime = StopTime1,
-         Date = SampleDate,
-         Time = SampleTime) %>%
+         StopTime = StopTime1) %>%
   arrange(Year, Date, Time, StationCode, ZoopNetType) %>%
   mutate(Flowdiff = FlowMeterEnd-FlowMeterStart)
 
@@ -224,6 +222,10 @@ zoop_all <- zoop_all_2 %>%
 zoop_all$ZoopNetType <- as.factor(zoop_all$ZoopNetType)
 levels(zoop_all$ZoopNetType) <- c("50_micron", "150_micron")
 
+# Add NAs
+zoop_all <- zoop_all %>%
+  mutate(Tide = replace(Tide, Tide == "", NA),
+         WeatherCode = replace(WeatherCode, WeatherCode == "", NA))
 
 # Write file if you want
 # write.csv(zoop_all, "R_write/zoop_merged.csv")
@@ -485,6 +487,7 @@ zoop_final <- zoop_replaced[,c("Date", "Time", "StationCode", "WeatherCode", "Ti
                                "Comment_QC3")]
 zoop_final <- zoop_final %>%
   arrange(Date, Time, StationCode, TaxonName)
+
 
 # Plot CPUE
 ggplot(zoop_replaced, aes(x = ZoopNetType, y = CPUE_ed)) +
