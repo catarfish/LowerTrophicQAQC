@@ -210,7 +210,7 @@ zoop_all_2 <- zoop_all_1[, c("PhysicalDataID", "ZoopsDataID",
                          "OrganismID", "Classification", "Organism", "Phylum",
                          "Subphylum", "Class", "Subclass", "Infraclass", "Superorder", "Order",
                         "Suborder", "Infraorder", "Superfamily", "Family", "Genus", "Species",
-                         "TaxonName", "TaxonRank", "CommonName", "LifeStage", "Count", "ZoopNetType", "CPUE")]
+                         "TaxonName", "TaxonRank", "CommonName", "LifeStage", "Count", "ZoopNetType", "CPUE", "Flag_PQC", "Comment_PQC")]
 
 # Filter down just to SHR/STTD
 zoop_all <- zoop_all_2 %>%
@@ -483,7 +483,8 @@ zoop_final <- zoop_replaced[,c("Date", "Time", "StationCode", "WeatherCode", "Ti
                                "LabComments", "ZoopNetType", "FlowMeterSpeed", "SetTime", "FlowMeterStart", "FlowMeterEnd",
                                "Flowdiff", "Flowdiff_ed", "VolMeso", "SubMeso", "VolMicro", "SubMicro", "Subsample",
                                "OrganismID", "TaxonName", "TaxonRank", "LifeStage",
-                               "Count", "CPUE", "CPUE_ed", "Flag_QC1", "Comment_QC1", "Flag_QC2", "Comment_QC2", "Flag_QC3",
+                               "Count", "CPUE", "CPUE_ed", "Flag_PQC", "Comment_PQC", 
+                               "Flag_QC1", "Comment_QC1", "Flag_QC2", "Comment_QC2", "Flag_QC3",
                                "Comment_QC3")]
 zoop_final <- zoop_final %>%
   arrange(Date, Time, StationCode, TaxonName)
@@ -498,7 +499,7 @@ ggplot(zoop_replaced, aes(x = ZoopNetType, y = CPUE_ed)) +
 today = today()
 write.csv(zoop_final, paste0("R_write/Zooplankton_Data_EDI_", today, ".csv"))
 
-# Optional: Create one flag column only?
+## Optional: Create one flag column only?
 zoop_forreview_flag <- zoop_final %>%
   mutate(QC_Flags = paste(Flag_QC1, ",", Flag_QC2, ",", Flag_QC3)) %>%
   mutate(QC_Comments = paste(Comment_QC1, ",", Comment_QC2, ",", Comment_QC3))

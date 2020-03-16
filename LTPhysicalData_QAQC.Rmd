@@ -476,28 +476,31 @@ PlotVars(WQ_large, Turbidity)
 to_drop <- c(1575, 1631, 1632, 1722, 1724, 1867, 1308, 748)
 
 # To change
-phys_yolo$WaterTemperature[phys_yolo$WaterTemperature == 62] <- 16.7
-phys_yolo$WaterTemperature[phys_yolo$WaterTemperature == 0.169] <- 16.9
-phys_yolo$Turbidity[phys_yolo$PhysicalDataID==680] <- 15.4
-phys_yolo$Turbidity[phys_yolo$PhysicalDataID==656] <- 94.2
-phys_yolo$Conductivity[phys_yolo$PhysicalDataID==748] <- 732
-phys_yolo$Conductivity[phys_yolo$PhysicalDataID==926] <- 1284
-phys_yolo$Conductivity[phys_yolo$PhysicalDataID==1847] <- 170
-phys_yolo$SpCnd[phys_yolo$PhysicalDataID==1140] <- 848
-phys_yolo$SpCnd[phys_yolo$PhysicalDataID==1139] <- 889
-phys_yolo$SpCnd[phys_yolo$PhysicalDataID==1847] <- 101
-phys_yolo$Secchi[phys_yolo$PhysicalDataID==708] <- NA
-phys_yolo$DO[phys_yolo$PhysicalDataID==1409] <- NA
-phys_yolo$pH[phys_yolo$PhysicalDataID==1501] <- 7.92
-phys_yolo$pH[phys_yolo$PhysicalDataID==1752] <- 8.13
+phys_yolo$WaterTemperature[phys_yolo$PhysicalDataID == 688] <- 16.7 # Was Fahrenheit
+phys_yolo$WaterTemperature[phys_yolo$WaterTemperature == 0.169] <- 16.9 # Decimal place
+phys_yolo$Turbidity[phys_yolo$PhysicalDataID==680] <- 15.4 # Typo
+phys_yolo$Turbidity[phys_yolo$PhysicalDataID==656] <- 94.2 # Typo
+phys_yolo$Conductivity[phys_yolo$PhysicalDataID==748] <- 732 # Typo
+phys_yolo$Conductivity[phys_yolo$PhysicalDataID==926] <- 1284 # Typo
+phys_yolo$Conductivity[phys_yolo$PhysicalDataID==1847] <- 170 # Typo
+phys_yolo$SpCnd[phys_yolo$PhysicalDataID==1140] <- 848 # Typo
+phys_yolo$SpCnd[phys_yolo$PhysicalDataID==1139] <- 889 # Typo
+phys_yolo$SpCnd[phys_yolo$PhysicalDataID==1847] <- 101 # Typo
+phys_yolo$Secchi[phys_yolo$PhysicalDataID==708] <- NA # Previously 0, but actually was not taken
+phys_yolo$DO[phys_yolo$PhysicalDataID==1409] <- NA # Previously 0, but actually was not taken
+phys_yolo$pH[phys_yolo$PhysicalDataID==1501] <- 7.92 # Typo
 
+
+# One entry was not entered
 phys_yolo$StationCode[phys_yolo$PhysicalDataID==1752] <- "STTD"
 phys_yolo$Conductivity[phys_yolo$PhysicalDataID==1752] <- 530
 phys_yolo$SpCnd[phys_yolo$PhysicalDataID==1752] <- 563
 phys_yolo$Turbidity[phys_yolo$PhysicalDataID==1752] <- 16.5
 phys_yolo$Tide[phys_yolo$PhysicalDataID==1752] <- "Ebb"
 phys_yolo$Date[phys_yolo$PhysicalDataID==1752] <-as.Date("2018-09-27", format = "%Y-%m-%d")
+phys_yolo$pH[phys_yolo$PhysicalDataID==1752] <- 8.13
 
+# Formatting
 phys_yolo$Time[phys_yolo$PhysicalDataID==401] <- as.hms("13:22:00", "%H:%m:%S")
 phys_yolo$Time[phys_yolo$PhysicalDataID==1602] <- as.hms("13:50:00", "%H:%m:%S")
 
@@ -510,30 +513,67 @@ phys_yolo %>%
 
 ```
 
-## 13. Plot QCed data
+
+### 13. Flag Data
+```{r Flag, message = FALSE, warning = FALSE}
+# Lists for flags and flag comments
+# Modified data due to typos
+modified <- c(688, 680, 656, 748, 926, 1847, 1140, 1139, 1847, 708, 1409, 1501, 1818)
+
+# Flagged but not replaced
+flag <-  c(899, 885, 1087, 1090, 1314, 1218, 602)
+
+# Variable associated with flag
+wtemp <- c(688, 1818)
+turb <- c(680, 656, 885)
+cond <- c(748, 926, 1847)
+spc <- c(1140, 1139, 1847, 899, 1087)
+sec <- c(708, 1090)
+do <- c(1409, 1314, 1218)
+ph <- c(1501)
+
+# Adding Flag and Comment variables
+phys_yolo_flag <- phys_yolo %>%
+  mutate(Flag_PQC = ifelse(PhysicalDataID %in% modified, 7,
+                           ifelse(PhysicalDataID %in% flag, 3, 1)),
+         Comment_PQC = ifelse(PhysicalDataID %in% wtemp, "WTEMP",
+                              ifelse(PhysicalDataID %in% turb, "TURB",
+                                     ifelse(PhysicalDataID %in% cond, "COND",
+                                            ifelse(PhysicalDataID %in% spc, "SPC",
+                                                   ifelse(PhysicalDataID %in% sec, "SECCHI",
+                                                          ifelse(PhysicalDataID %in% do, "DO",
+                                                          ifelse(PhysicalDataID %in% ph, "PH", ""))))))))
+```
+
+## 14. Plot QCed data
 
 ```{r Plot edited data, message = FALSE, warning = FALSE, echo = FALSE}
 #
-p.temp <- ggplot(phys_yolo, aes(Date, WaterTemperature)) + geom_point() + labs(y = "Water Temp(C)") +
+p.temp <- ggplot(phys_yolo_flag, aes(Date, WaterTemperature)) + geom_point() + labs(y = "Water Temp(C)") +
   theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
-p.secchi <- ggplot(phys_yolo, aes(Date, Secchi)) + geom_point() + labs(y = "Secchi Depth(m)") +
+p.secchi <- ggplot(phys_yolo_flag, aes(Date, Secchi)) + geom_point() + labs(y = "Secchi Depth(m)") +
   theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
-p.conductivity <- ggplot(phys_yolo, aes(Date, Conductivity)) + geom_point() + labs(y = "Conductivity(useimens/cm)") +
+p.conductivity <- ggplot(phys_yolo_flag, aes(Date, Conductivity)) + geom_point() + labs(y = "Conductivity(useimens/cm)") +
   theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
-p.spc <- ggplot(phys_yolo, aes(Date, SpCnd)) + geom_point() + labs(y = "SpCnd(useimens/cm)") +
+p.spc <- ggplot(phys_yolo_flag, aes(Date, SpCnd)) + geom_point() + labs(y = "SpCnd(useimens/cm)") +
   theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
-p.pH <- ggplot(phys_yolo, aes(Date, pH)) + geom_point() + labs(y = "pH") +
+p.pH <- ggplot(phys_yolo_flag, aes(Date, pH)) + geom_point() + labs(y = "pH") +
   theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
-p.do <- ggplot(phys_yolo, aes(Date, DO)) + geom_point() + labs(y = "DO(mg/L)") +
+p.do <- ggplot(phys_yolo_flag, aes(Date, DO)) + geom_point() + labs(y = "DO(mg/L)") +
   theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
-p.turb <- ggplot(phys_yolo, aes(Date, Turbidity)) + geom_point() + labs(y = "Turbidity(NTU)") +
+p.turb <- ggplot(phys_yolo_flag, aes(Date, Turbidity)) + geom_point() + labs(y = "Turbidity(NTU)") +
   theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
 
 # Arrange plots together
 grid.arrange(p.temp, p.ec, p.spc, p.secchi, p.turb, p.do, p.pH)
 
+
+```
+
+### 15. Write file
+```{r Write file, message = FALSE, warning = FALSE}
 # Write cleaned up file to be used later (merged with zooplankton, etc.)
-write.csv(phys_yolo, "Data/LT_phys_qc.csv")
+write.csv(phys_yolo_flag, "Data/LT_phys_qc.csv")
 ```
 
 
