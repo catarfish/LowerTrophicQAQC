@@ -286,7 +286,7 @@ kable(Flow.sum) %>%
 ##8. Visualize and Summarize CPUE
 * Summarize CPUE by sampling event/Net Type. Plot for each year.
 
-```{r cpue}
+```{r cpue vis}
 ## Plots
 ggplot(zoop_all, aes(Date, CPUE, col = ZoopNetType))+ geom_col()
 

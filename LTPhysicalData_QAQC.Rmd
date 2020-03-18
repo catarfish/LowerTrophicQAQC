@@ -396,22 +396,29 @@ LIS_DO <- read_csv("Data/STA/LIS_61.csv")
 LIS_pH <- read_csv("Data/STA/LIS_62.csv")
 LIS_Turb <- read_csv("Data/STA/LIS_27.csv")
 LIS_EC <- read_csv("Data/STA/LIS_100.csv")
+LIS_EC$`DATE TIME` <- mdy_hm(LIS_EC$`DATE TIME`)
+# LIS_WaterTemperature$VALUE <- as.numeric(gsub(",", "",LIS_WaterTemperature$VALUE))
+# LIS_DO$VALUE <- as.numeric(gsub(",", "",LIS_DO$VALUE))
+# LIS_pH$VALUE <- as.numeric(gsub(",", "",LIS_pH$VALUE))
+# LIS_Turb$VALUE <- as.numeric(gsub(",", "",LIS_Turb$VALUE))
+# LIS_EC$VALUE <- as.numeric(gsub(",", "",LIS_EC$VALUE))
+
 LIS_WaterTemperature_ed <- LIS_WaterTemperature %>%
   select(5,6) %>%
   filter(VALUE<99998) %>%
   mutate(Temp_C = round((VALUE-32)*5/9,1))
 LIS_DO_ed <- LIS_DO %>%
   select(5,6) %>%
-  rename("DO" = VALUE)
+  rename(DO = VALUE)
 LIS_pH_ed <- LIS_pH %>%
   select(5,6) %>%
-  rename("pH" = VALUE)
+  rename(pH = VALUE)
 LIS_Turb_ed <- LIS_Turb %>%
   select(5,6) %>%
-  rename("Turbidity" = VALUE)
+  rename(Turbidity = VALUE)
 LIS_EC_ed <- LIS_EC%>%
   select(5,6) %>%
-  rename(Conductivity = "VALUE")
+  rename(Conductivity = VALUE)
 
 # Merge variables together
 a <- merge(LIS_DO_ed, LIS_Turb_ed, by = "DATE TIME")
@@ -427,12 +434,12 @@ LIS_WQ$Hour <- as.numeric(format(strptime(LIS_WQ$Time, "%H:%M:%S"), "%H"))
 LIS_WQ_f <- LIS_WQ %>%
   rename(Datetime = `DATE TIME`,
          WaterTemperature = Temp_C) %>%
-  filter(Hour>06 & Hour<15)%>%
-  filter(WaterTemperature>0 & WaterTemperature<40) %>%
-  filter(Conductivity>0) %>%
-  filter(DO>0) %>%
-  filter(pH>0 & pH<14) %>%
-  filter(Turbidity >0) %>%
+  dplyr::filter(Hour>06 & Hour<15) %>%
+  dplyr::filter(WaterTemperature>0 & WaterTemperature<40) %>%
+  dplyr::filter(Conductivity>0)%>%
+  filter(DO>0)%>%
+         filter(pH>0 & pH<14)%>%
+         filter(Turbidity >0) %>%
   mutate(StationCode="LIS_RT") %>%
   select(1,3:7,9,11)
 
