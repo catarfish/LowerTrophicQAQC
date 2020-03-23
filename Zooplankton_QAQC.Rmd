@@ -11,31 +11,34 @@ editor_options:
 options(width = 10000)
 ```
 
-## 1.Setup and Download Libraries
+### 1.Setup and Download Libraries
 
 ```{r setup, results=FALSE, warning = FALSE, message = FALSE}
 
 rm(list=ls(all=TRUE))
-
-library(tidyverse)
-library(lubridate)
-library(stringr)
-library(here)
-library(kableExtra)
-library(data.table)
-library(scales)
-library(mefa)
+if(!require(tidyverse)) {install.packages("tidyr")
+  library(tidyverse)}
+if(!require(lubridate)) {install.packages("lubridate")
+  library(lubridate)}
+if(!require(kableExtra)) {install.packages("kableExtra")
+  library(kableExtra)}
+if(!require(data.table)) {install.packages("data.table")
+  library(data.table)}
+if(!require(scales)) {install.packages("scales")
+  library(scales)}
+if(!require(mefa)) {install.packages("mefa")
+  library(mefa)}
 ```
 
-## 2.Load Data tables, Change datetime formats, Rename variables, Check Variable Types
+### 2.Load Data tables, Change datetime formats, Rename variables, Check Variable Types
 
 ```{r load, results = FALSE, warning = FALSE, message = FALSE}
 # Load data - several tables
 #setwd("C:/Users/cpien/OneDrive - California Department of Water Resources/Work/Database/R_code/")
 phys <- read.csv("Data/LT_phys_qc.csv") # Cleaned up in another R file
-zoop_catch <- read.csv("Data/TblZoopsCatchData.csv") # Catch data only
+zoop_catch0 <- read.csv("Data/TblZoopsCatchData.csv") # Catch data only
 zoop_ref <- read.csv("Data/TblZooplankton.csv") # Zooplankton sampling info and lab info
-zoop_tax <- read.csv("Data/YB_TaxonomyTable.csv") # Taxonomic tree - needed for Classification (CPUE) and LifeStage
+zoop_tax <- read.csv("Data/YB_TaxonomyTable.csv") # Taxonomic tree - needed for Taxonomist Classification of Microzooplankton vs Mesozooplankton for CPUE calculations, used for LifeStage
 wy <- read.csv("Data/WaterYearType_CDEC.csv") # Water Years from CDEC
 # qcsamp is zoop_all (see below) but with field comments flagged. 2019 data were removed manually. Rows were added to account for comments that applied to both 150 and 50 nets. 
 qcsamp <- read.csv("Data/Zoop_Field_QC.csv")  # Separately sorted through comments to determine sampling flags
@@ -50,7 +53,7 @@ phys$Datetime = as.POSIXct(phys$Datetime, format = "%Y-%m-%d %H:%M:%S")
 ```
 
 # Clean Up
-## 3. Clean up some columns
+### 3. Clean up some columns
 
 ```{r filter, results = FALSE, message = FALSE, warning = FALSE}
 
@@ -64,7 +67,7 @@ zoop_ref <- zoop_ref %>%
          `50_VolMeso` = X50_VolMeso, `50_SubMeso` = X50_SubMeso,
          `50_VolMicro` = X50_VolMicro, `50_SubMicro` = X50_SubMicro)
 
-zoop_catch <- zoop_catch %>%
+zoop_catch <- zoop_catch0 %>%
   rename(Subsample = Subsample.)
 
 # Get rid of a few columns
@@ -74,7 +77,7 @@ zoop_ref$X <- NULL
 zoop_ref$QC_Flag <- NULL
 ```
 
-## 4. Make changes that need to be made to data
+### 4. Make changes that need to be made to data
 * Merge some duplicated OrganismIDs
 * Add appropriate ZoopNetTypes
 * Change a few flowmeter values
@@ -94,15 +97,8 @@ zoop_catch$OrganismID[zoop_catch$OrganismID==71] <- 58
 # Two records mislabeled as OrganismID = 68 (an old code) - change to 64
 zoop_catch$OrganismID[zoop_catch$ZoopsDataID==882] <- 64
 zoop_catch$OrganismID[zoop_catch$ZoopsDataID==1005] <- 64
- 
-# Add ZoopNetType to a few 50-micron entries
-zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==8663] <- 50
-zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==8664] <- 50
-zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==8665] <- 50
-zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==9829] <- 50
-zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==10375] <- 50
 
-# Change Flowmeter Values. Other changes have been made in database. 
+# Change Flowmeter Values based on field sheets. 
 zoop_ref$`50_ZoopEndMeter`[zoop_ref$ZoopsDataID==799] <- 990000
 zoop_ref$`50_ZoopEndMeter`[zoop_ref$ZoopsDataID %in% c(955,968,1000)] <- 1000000
 
@@ -115,23 +111,37 @@ zoop_ref <- zoop_ref %>%  mutate(`150_Flowdiff` = (`150_ZoopEndMeter`-`150_ZoopS
 
 ```
 
-## 5. Merge data tables, calculate CPUE
+### 5. Merge tables, calculate CPUE
 
 ```{r cpue, message = FALSE, warning = FALSE}
 # Merge datasets for CPUE variables
 # Only include samples that have a linking ZoopsDataID
 catch_zoop0 <- inner_join(zoop_ref, zoop_catch, by = "ZoopsDataID")
 
-# Fill in "ZoopNetType" as 150 for all that are not entered
+# Quick check to identify correct ZoopNetTypes
+phys.mini <- phys %>% select(PhysicalDataID, Date, Time, StationCode)
+netcheck <- inner_join(catch_zoop0,phys.mini) %>%
+  filter(is.na(ZoopNetType))%>%
+  filter(!is.na(`50_ZoopStartMeter`))
+
+# Add ZoopNetType to a few 50-micron entries
+# Checked with contractor data to confirm net type
+zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==8663] <- 50
+zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==8664] <- 50
+zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==8665] <- 50
+zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==9829] <- 50
+zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==10375] <- 50
+
+# Fill in "ZoopNetType" as 150 for the rest that are not entered
+# Checked with contractor data to confirm net type
 catch_zoop0$ZoopNetType[is.na(catch_zoop0$ZoopNetType)] <- 150
 
 # Merge taxonomic tree
 catch_zoop <- left_join(catch_zoop0, zoop_tax, by = "OrganismID") 
-#catch_zoop <- catch_zoop0
 
 # Calculate CPUE (Count/(S/V))
 # CPUE differs based on flowmeter used, net size, and meso vs. microzooplankton
-  # First calculate the volumes:
+  # First calculate the volumes: (diameter = 0.5m, (0.5m)^2 = 0.25m^2)
     # Volume sampled = (pi * diameter^2/4) * (Flowdiff * rotor constant/999999))
     # Subsample correction = (volume subsampled * #subsamples/ volume sent to contractors)
 
@@ -182,7 +192,7 @@ zoop_all_0 <- inner_join(phys,cz2, by = "PhysicalDataID") %>%
 
 ```
 
-## 6. Clean up names, columns, filter down to SHR/STTD
+### 6. Clean up names, columns, filter down to SHR/STTD
 
 ```{r Rename and rearrange}
 # Rename some columns, remove unnecessary columns
@@ -232,7 +242,7 @@ zoop_all <- zoop_all %>%
 ```
 
 # Visualization
-## 7. Visualize and Summarize Flowmeter data
+### 7. Visualize and Summarize Flowmeter data
 
 ```{r Flow, message = FALSE, warning = FALSE}
 
@@ -270,7 +280,7 @@ ggplot(Flow_yr_month, aes(MonthAbb, median.flow)) + geom_boxplot(fill = "#00acee
 
 
 ### Table of values
-# Calculate median, MAD, lower and upper ranges for each day
+# Calculate median, lower and upper ranges for each day
 Flow.sum <- Flowmeter %>%
   filter(StationCode == "STTD" | StationCode == "SHR") %>%
   group_by(StationCode, ZoopNetType, FlowMeterSpeed) %>%
@@ -283,12 +293,15 @@ kable(Flow.sum) %>%
 
 ```
 
-##8. Visualize and Summarize CPUE
+### 8. Visualize and Summarize CPUE
 * Summarize CPUE by sampling event/Net Type. Plot for each year.
 
 ```{r cpue vis}
 ## Plots
-ggplot(zoop_all, aes(Date, CPUE, col = ZoopNetType))+ geom_col()
+ggplot(zoop_all, aes(Date, CPUE, col = ZoopNetType))+ geom_jitter() +
+  facet_wrap(~StationCode, scales = "free")+
+  theme_bw() +
+  scale_colour_manual(values = c("hotpink4", "turquoise4")) 
 
 #### Create plots of CPUE (these go into Plots folder)
 
@@ -309,7 +322,7 @@ plist <- by(zoop_all, zoop_all$Year, function(i) {
 ```
 
 # QC
-## 9. Start QC flag process:
+### 9. Start QC flag process:
 * Add Water Year Type - this will be used to come up with grouped averages
 * QC Flags: 1 = Pass/ 3 = Suspect/ 5 = Fail & Replace Value
 * Flag 1: Flowmeter Data
@@ -417,7 +430,7 @@ zoop_forreview_3 <-  zoop_forreview_CPUE_1 %>%
 
 ```
 
-##11. Recalculate values for Flowmeter Difference, CPUE
+### 11. Recalculate values for Flowmeter Difference, CPUE
 * Group by WYClass, StationCode, ZoopNetType, FlowMeterSpeed, calculate Flowdiff mean and median.
 * "Replace" Flowmeter values if flag=5 (created new column Flowdiff_ed)
 * "Replace" CPUE if Flowmeter value was changed (creadted new column CPUE_ed) 
@@ -436,7 +449,8 @@ fm_replacevals <- zoop_forreview_CPUE_0 %>%
 
 # Look at distribution to make sure it makes sense
 ggplot(fm_replacevals, aes(WYClass, Flowdiff.mean, fill = FlowMeterSpeed, group = ZoopNetType)) +
-  facet_wrap(~StationCode) + geom_col(position = "dodge2")
+  facet_wrap(~StationCode) + geom_col(position = "dodge2") + 
+  theme_bw() +scale_fill_manual(values = c("hotpink4", "turquoise4")) 
 
 # Next, replace Flowdiff 
 zoop_replace_FM <- left_join(zoop_forreview_3, fm_replacevals) %>%
@@ -473,7 +487,7 @@ zoop_replaced <-  zoop_replace_CP %>%
 ```
 
 
-##12. Final Cleanup of variables, write data
+### 12. Final Cleanup of variables, write data
 
 ```{r final cleanup}
 # Change order of variables 
@@ -491,25 +505,30 @@ zoop_final <- zoop_final %>%
 
 
 # Plot CPUE
-ggplot(zoop_replaced, aes(x = ZoopNetType, y = CPUE_ed)) +
-  facet_wrap(~StationCode, scales = "free_y") + geom_col(position = "dodge2")
-
+ggplot(zoop_replaced, aes(x = ZoopNetType, y = CPUE_ed, col = ZoopNetType)) +
+  facet_wrap(~StationCode, scales = "free") + 
+  scale_colour_manual(values = c("turquoise4", "hotpink4")) +
+  geom_jitter() + theme_bw() 
 
 # Write File
-today = today()
+today = format(today(),"%Y%m%d")
 write.csv(zoop_final, paste0("R_write/Zooplankton_Data_EDI_", today, ".csv"))
+```
 
+
+### 13. Amount of zoop data replaced
+```{r Calculate replaced}
 ## Optional: Create one flag column only?
 zoop_forreview_flag <- zoop_final %>%
   mutate(QC_Flags = paste(Flag_QC1, ",", Flag_QC2, ",", Flag_QC3)) %>%
   mutate(QC_Comments = paste(Comment_QC1, ",", Comment_QC2, ",", Comment_QC3))
 
-## Amount "flagged"replaced"
-fives <- zoop_forreview_flag %>%
+## Filter rows with a 7
+sevens <- zoop_forreview_flag %>%
   filter(grepl("7", QC_Flags ))
 
-nrow(fives)/nrow(zoop_final)
+## Amount replaced
+nrow(sevens)/nrow(zoop_final)
 ```
-
 
 
