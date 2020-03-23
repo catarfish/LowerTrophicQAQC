@@ -98,11 +98,11 @@ VisPoint <-  function(data,y) {
 } 
 
 # Histogram by Station, y = variable of interest
-VisHist <-  function(data,x) {
+VisHist <-  function(data,x, bin) {
     x <- enquo(x)
   data %>%
     ggplot() +
-    geom_histogram(mapping = aes(!! x,col = StationCode),binwidth = 5, fill = "lightseagreen", colour = "lightgray") +
+    geom_histogram(mapping = aes(!! x,col = StationCode),binwidth = bin, fill = "lightseagreen", colour = "lightgray") +
     facet_wrap(~StationCode, scales = "free_x") +
     theme_bw() +
   scale_colour_manual(values = c("coral3", "lightseagreen"))+
@@ -288,37 +288,38 @@ kable(t(WQ.overall)) %>%
 Yearbox(phys_yolo, WaterTemperature)
 Monthbox(phys_yolo,WaterTemperature)
 VisPoint(phys_yolo,WaterTemperature)
-VisHist(phys_yolo, WaterTemperature)
+VisHist(phys_yolo, WaterTemperature, 5)
 
 Yearbox(phys_yolo, Secchi)
 Monthbox(phys_yolo,Secchi)
 VisPoint(phys_yolo,Secchi)
-VisHist(phys_yolo, Secchi)
+VisHist(phys_yolo, Secchi, 0.5)
+
 
 Yearbox(phys_yolo, Turbidity)
 Monthbox(phys_yolo,Turbidity)
 VisPoint(phys_yolo,Turbidity)
-VisHist(phys_yolo, Turbidity)
+VisHist(phys_yolo, Turbidity, 20)
 
 Yearbox(phys_yolo, DO)
 Monthbox(phys_yolo,DO)
 VisPoint(phys_yolo,DO)
-VisHist(phys_yolo, DO)
+VisHist(phys_yolo, DO, 1)
 
 Yearbox(phys_yolo, Conductivity)
 Monthbox(phys_yolo,Conductivity)
 VisPoint(phys_yolo,Conductivity)
-VisHist(phys_yolo, Conductivity)
+VisHist(phys_yolo, Conductivity, 20)
 
 Yearbox(phys_yolo, SpCnd)
 Monthbox(phys_yolo,SpCnd)
 VisPoint(phys_yolo,SpCnd)
-VisHist(phys_yolo, SpCnd)
+VisHist(phys_yolo, SpCnd, 20)
 
 Yearbox(phys_yolo, pH)
 Monthbox(phys_yolo,pH)
 VisPoint(phys_yolo,pH)
-VisHist(phys_yolo, pH)
+VisHist(phys_yolo, pH, 1)
 
 ```
 
@@ -397,11 +398,7 @@ LIS_pH <- read_csv("Data/STA/LIS_62.csv")
 LIS_Turb <- read_csv("Data/STA/LIS_27.csv")
 LIS_EC <- read_csv("Data/STA/LIS_100.csv")
 LIS_EC$`DATE TIME` <- mdy_hm(LIS_EC$`DATE TIME`)
-# LIS_WaterTemperature$VALUE <- as.numeric(gsub(",", "",LIS_WaterTemperature$VALUE))
-# LIS_DO$VALUE <- as.numeric(gsub(",", "",LIS_DO$VALUE))
-# LIS_pH$VALUE <- as.numeric(gsub(",", "",LIS_pH$VALUE))
-# LIS_Turb$VALUE <- as.numeric(gsub(",", "",LIS_Turb$VALUE))
-# LIS_EC$VALUE <- as.numeric(gsub(",", "",LIS_EC$VALUE))
+
 
 LIS_WaterTemperature_ed <- LIS_WaterTemperature %>%
   select(5,6) %>%
@@ -494,6 +491,7 @@ phys_yolo$SpCnd[phys_yolo$PhysicalDataID==1140] <- 848 # Typo
 phys_yolo$SpCnd[phys_yolo$PhysicalDataID==1139] <- 889 # Typo
 phys_yolo$SpCnd[phys_yolo$PhysicalDataID==1847] <- 101 # Typo
 phys_yolo$Secchi[phys_yolo$PhysicalDataID==708] <- NA # Previously 0, but actually was not taken
+phys_yolo$Secchi[phys_yolo$PhysicalDataID==708] <- NA # Previously 0, but actually was not taken
 phys_yolo$DO[phys_yolo$PhysicalDataID==1409] <- NA # Previously 0, but actually was not taken
 phys_yolo$pH[phys_yolo$PhysicalDataID==1501] <- 7.92 # Typo
 
@@ -528,11 +526,11 @@ phys_yolo %>%
 modified <- c(688, 680, 656, 748, 926, 1847, 1140, 1139, 1847, 708, 1409, 1501, 1818)
 
 # Flagged but not replaced
-flag <-  c(899, 885, 1087, 1090, 1314, 1218, 602)
+flag <-  c(899, 885, 1087, 1090, 1314, 1218, 602, 668, 841, 1187)
 
 # Variable associated with flag
 wtemp <- c(688, 1818)
-turb <- c(680, 656, 885)
+turb <- c(680, 656, 885, 668, 841, 1187)
 cond <- c(748, 926, 1847)
 spc <- c(1140, 1139, 1847, 899, 1087)
 sec <- c(708, 1090)
@@ -550,29 +548,38 @@ phys_yolo_flag <- phys_yolo %>%
                                                    ifelse(PhysicalDataID %in% sec, "SECCHI",
                                                           ifelse(PhysicalDataID %in% do, "DO",
                                                           ifelse(PhysicalDataID %in% ph, "PH", ""))))))))
+
+phys_yolo_flag$Flag_PQC <- as.factor(phys_yolo_flag$Flag_PQC)
+
+phys_yolo_flag %>%
+  filter(Turbidity>200)
 ```
 
 ## 14. Plot QCed data
 
 ```{r Plot edited data, message = FALSE, warning = FALSE, echo = FALSE}
 #
-p.temp <- ggplot(phys_yolo_flag, aes(Date, WaterTemperature)) + geom_point() + labs(y = "Water Temp(C)") +
+
+cols = c("lightslategrey", "goldenrod2", "slateblue4")
+p.temp <- ggplot(phys_yolo_flag, aes(Date, WaterTemperature, col = Flag_PQC)) + geom_point() + labs(y = "Water Temp(C)") + scale_colour_manual(values = cols)+
   theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
-p.secchi <- ggplot(phys_yolo_flag, aes(Date, Secchi)) + geom_point() + labs(y = "Secchi Depth(m)") +
+p.secchi <- ggplot(phys_yolo_flag, aes(Date, Secchi, col = Flag_PQC)) + geom_point() + labs(y = "Secchi Depth(m)") +
+ scale_colour_manual(values = cols)+ theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.conductivity <- ggplot(phys_yolo_flag, aes(Date, Conductivity, col = Flag_PQC)) + geom_point() + labs(y = "Conductivity(useimens/cm)") +
   theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
-p.conductivity <- ggplot(phys_yolo_flag, aes(Date, Conductivity)) + geom_point() + labs(y = "Conductivity(useimens/cm)") +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
-p.spc <- ggplot(phys_yolo_flag, aes(Date, SpCnd)) + geom_point() + labs(y = "SpCnd(useimens/cm)") +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
-p.pH <- ggplot(phys_yolo_flag, aes(Date, pH)) + geom_point() + labs(y = "pH") +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
-p.do <- ggplot(phys_yolo_flag, aes(Date, DO)) + geom_point() + labs(y = "DO(mg/L)") +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
-p.turb <- ggplot(phys_yolo_flag, aes(Date, Turbidity)) + geom_point() + labs(y = "Turbidity(NTU)") +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.spc <- ggplot(phys_yolo_flag, aes(Date, SpCnd, col = Flag_PQC)) + geom_point() + labs(y = "SpCnd(useimens/cm)") +
+  scale_colour_manual(values = cols)+theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.ec <- ggplot(phys_yolo_flag, aes(Date, Conductivity, col = Flag_PQC)) + geom_point() + labs(y = "EC(useimens/cm)") +
+  scale_colour_manual(values = cols)+theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.pH <- ggplot(phys_yolo_flag, aes(Date, pH, col = Flag_PQC)) + geom_point() + labs(y = "pH") +
+  scale_colour_manual(values = cols)+theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.do <- ggplot(phys_yolo_flag, aes(Date, DO, col = Flag_PQC)) + geom_point() + labs(y = "DO(mg/L)") +
+  scale_colour_manual(values = cols)+theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
+p.turb <- ggplot(phys_yolo_flag, aes(Date, Turbidity, col = Flag_PQC)) + geom_point() + labs(y = "Turbidity(NTU)") +
+ scale_colour_manual(values = cols)+ theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11))
 
 # Arrange plots together
-grid.arrange(p.temp, p.ec, p.spc, p.secchi, p.turb, p.do, p.pH)
+grid.arrange(p.temp, p.ec, p.spc, p.secchi, p.turb, p.do, p.pH, ncol = 2)
 
 
 ```
