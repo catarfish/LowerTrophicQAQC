@@ -1,5 +1,5 @@
 ---
-title: "LowerTrophic_QAQC"
+title: "LTPhysicalData_QAQC"
 author: "Catarina Pien"
 date: "May 3, 2019"
 output: html_document
@@ -18,14 +18,14 @@ rm(list=ls(all=TRUE))
 
 rm(list=ls(all=TRUE))
 
-library(tidyverse)
-library(readr)
-library(lubridate)
-library(hms)
-library(gridExtra)
-library(stringr)
-library(kableExtra)
-library(knitr)
+if(!require(tidyverse)) {install.packages("tidyr")
+  library(tidyverse)}
+if(!require(gridExtra)) {install.packages("tidyr")
+  library(gridExtra)}
+if(!require(kableExtra)) {install.packages("tidyr")
+  library(kableExtra)}
+if(!require(knitr)) {install.packages("tidyr")
+  library(knitr)}
 
 ```
 
