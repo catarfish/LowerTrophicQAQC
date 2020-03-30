@@ -1,14 +1,14 @@
 ---
 title: "Zoop_QAQC"
 author: "Catarina Pien"
-date: "May 23, 2019"
+date: "April 2020"
 output: html_document
 editor_options: 
   chunk_output_type: console
 ---
 
 ```{r set-options, echo=FALSE, cache=FALSE}
-options(width = 10000)
+options(fig.width = 12)
 ```
 
 ### 1.Setup and Download Libraries
@@ -16,7 +16,7 @@ options(width = 10000)
 ```{r setup, results=FALSE, warning = FALSE, message = FALSE}
 
 rm(list=ls(all=TRUE))
-if(!require(tidyverse)) {install.packages("tidyr")
+if(!require(tidyverse)) {install.packages("tidyverse")
   library(tidyverse)}
 if(!require(lubridate)) {install.packages("lubridate")
   library(lubridate)}
@@ -44,11 +44,11 @@ wy <- read.csv("Data/WaterYearType_CDEC.csv") # Water Years from CDEC
 qcsamp <- read.csv("Data/Zoop_Field_QC.csv")  # Separately sorted through comments to determine sampling flags
 
 # Add and change date formats
-phys$Date<-as.Date(phys$Date, format ="%Y-%m-%d")
+phys$Date<-ymd(phys$Date)
 phys$Year <- ordered(year(phys$Date))
 phys$Month <- ordered(month(phys$Date))
 phys$MonthAbb <-ordered(phys$MonthAbb,levels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
-phys$Datetime = as.POSIXct(phys$Datetime, format = "%Y-%m-%d %H:%M:%S")
+phys$Datetime = ymd_hms(phys$Datetime)
 
 ```
 
@@ -68,7 +68,8 @@ zoop_ref <- zoop_ref %>%
          `50_VolMicro` = X50_VolMicro, `50_SubMicro` = X50_SubMicro)
 
 zoop_catch <- zoop_catch0 %>%
-  rename(Subsample = Subsample.)
+  rename(Subsample = Subsample.,
+         MeshSize = ZoopNetType)
 
 # Get rid of a few columns
 zoop_catch <- zoop_catch[,c(1:3,4:6)]
@@ -79,7 +80,7 @@ zoop_ref$QC_Flag <- NULL
 
 ### 4. Make changes that need to be made to data
 * Merge some duplicated OrganismIDs
-* Add appropriate ZoopNetTypes
+* Add appropriate MeshSizes
 * Change a few flowmeter values
 * Calculate Flowdiff
 
@@ -118,70 +119,78 @@ zoop_ref <- zoop_ref %>%  mutate(`150_Flowdiff` = (`150_ZoopEndMeter`-`150_ZoopS
 # Only include samples that have a linking ZoopsDataID
 catch_zoop0 <- inner_join(zoop_ref, zoop_catch, by = "ZoopsDataID")
 
-# Quick check to identify correct ZoopNetTypes
+# Quick check to identify correct MeshSizes
 phys.mini <- phys %>% select(PhysicalDataID, Date, Time, StationCode)
 netcheck <- inner_join(catch_zoop0,phys.mini) %>%
-  filter(is.na(ZoopNetType))%>%
+  filter(is.na(MeshSize))%>%
   filter(!is.na(`50_ZoopStartMeter`))
 
-# Add ZoopNetType to a few 50-micron entries
+# Add MeshSize to a few 50-micron entries
 # Checked with contractor data to confirm net type
-zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==8663] <- 50
-zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==8664] <- 50
-zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==8665] <- 50
-zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==9829] <- 50
-zoop_catch$ZoopNetType[zoop_catch$ZoopsCatchID==10375] <- 50
+zoop_catch$MeshSize[zoop_catch$ZoopsCatchID==8663] <- 50
+zoop_catch$MeshSize[zoop_catch$ZoopsCatchID==8664] <- 50
+zoop_catch$MeshSize[zoop_catch$ZoopsCatchID==8665] <- 50
+zoop_catch$MeshSize[zoop_catch$ZoopsCatchID==9829] <- 50
+zoop_catch$MeshSize[zoop_catch$ZoopsCatchID==10375] <- 50
 
-# Fill in "ZoopNetType" as 150 for the rest that are not entered
+# Fill in "MeshSize" as 150 for the rest that are not entered
 # Checked with contractor data to confirm net type
-catch_zoop0$ZoopNetType[is.na(catch_zoop0$ZoopNetType)] <- 150
+catch_zoop0$MeshSize[is.na(catch_zoop0$MeshSize)] <- 150
 
 # Merge taxonomic tree
 catch_zoop <- left_join(catch_zoop0, zoop_tax, by = "OrganismID") 
 
 # Calculate CPUE (Count/(S/V))
 # CPUE differs based on flowmeter used, net size, and meso vs. microzooplankton
-  # First calculate the volumes: (diameter = 0.5m, (0.5m)^2 = 0.25m^2)
-    # Volume sampled = (pi * diameter^2/4) * (Flowdiff * rotor constant/999999))
-    # Subsample correction = (volume subsampled * #subsamples/ volume sent to contractors)
+  # First calculate the volumes: (diameter = 0.5m, (0.5m)^2 = 0.25m^2), Distance = Flowdiff * rotor constant/999999
+    # Volume sampled = (pi * (diameter^2/4)) * (Flowdiff * rotor constant/999999))
+    # Proportion subsampled = (volume subsampled * #subsamples/ volume sent to contractors)
 
 cz1 <- catch_zoop %>%
-  mutate(`50_V_reg` = (pi*0.25/4)*(`50_Flowdiff`*26873/999999),
-         `50_V_low` = (pi*0.25/4)*(`50_Flowdiff`*57560/999999),
-         `150_V_reg` = (pi*0.25/4)*(`150_Flowdiff`*26873/999999),
-         `150_V_low` = (pi*0.25/4)*(`150_Flowdiff`*57560/999999),
-         `50_S_micro` = catch_zoop$`50_SubMicro` * catch_zoop$`Subsample`/catch_zoop$`50_VolMicro`,
-         `50_S_meso`  = catch_zoop$`50_SubMeso` * catch_zoop$`Subsample`/catch_zoop$`50_VolMeso`,
-         `150_S_micro` = catch_zoop$`SubMicro` * catch_zoop$`Subsample`/catch_zoop$`VolMicro`,
-         `150_S_meso`  = catch_zoop$`SubMeso` * catch_zoop$`Subsample`/catch_zoop$`VolMeso`) %>%
-mutate(CPUE = ifelse((ZoopNetType == 50 & FlowMeterSpeed == "Regular" & Classification == "Microzooplankton & Nauplii"), 
+  mutate(`50_V_reg` = round((pi*0.25/4)*(`50_Flowdiff`*26873/999999),3),
+         `50_V_low` = round((pi*0.25/4)*(`50_Flowdiff`*57560/999999),3),
+         `150_V_reg` = round((pi*0.25/4)*(`150_Flowdiff`*26873/999999),3),
+         `150_V_low` = round((pi*0.25/4)*(`150_Flowdiff`*57560/999999),3),
+         `50_S_micro` = round(catch_zoop$`50_SubMicro` * catch_zoop$`Subsample`/catch_zoop$`50_VolMicro`,5),
+         `50_S_meso`  = round(catch_zoop$`50_SubMeso` * catch_zoop$`Subsample`/catch_zoop$`50_VolMeso`,5),
+         `150_S_micro` = round(catch_zoop$`SubMicro` * catch_zoop$`Subsample`/catch_zoop$`VolMicro`,5),
+         `150_S_meso`  = round(catch_zoop$`SubMeso` * catch_zoop$`Subsample`/catch_zoop$`VolMeso`,5)) %>%
+mutate(CPUE = ifelse((MeshSize == 50 & FlowMeterSpeed == "Regular" & Classification == "Microzooplankton & Nauplii"), 
                             round(((Count/`50_S_micro`) /`50_V_reg`),3), 
-         ifelse((ZoopNetType == 50 & FlowMeterSpeed == "Regular" & Classification != "Microzooplankton & Nauplii"), 
+         ifelse((MeshSize == 50 & FlowMeterSpeed == "Regular" & Classification != "Microzooplankton & Nauplii"), 
                 round(((Count/`50_S_meso`)/`50_V_reg`),3),
-         ifelse((ZoopNetType == 50 & FlowMeterSpeed == "Low" & Classification != "Microzooplankton & Nauplii"),
+         ifelse((MeshSize == 50 & FlowMeterSpeed == "Low" & Classification != "Microzooplankton & Nauplii"),
                 round(((Count/`50_S_meso`)/`50_V_low`),3),
-         ifelse((ZoopNetType == 50 & FlowMeterSpeed == "Low" & Classification == "Microzooplankton & Nauplii"),
+         ifelse((MeshSize == 50 & FlowMeterSpeed == "Low" & Classification == "Microzooplankton & Nauplii"),
                 round(((Count/`50_S_micro`)/ `50_V_low`),3),
-         ifelse((ZoopNetType == 150 & FlowMeterSpeed == "Regular" & Classification == "Microzooplankton & Nauplii"), 
+         ifelse((MeshSize == 150 & FlowMeterSpeed == "Regular" & Classification == "Microzooplankton & Nauplii"), 
                             round(((Count/`150_S_micro`) / `150_V_reg`),3), 
-         ifelse((ZoopNetType == 150 & FlowMeterSpeed == "Regular" & Classification != "Microzooplankton & Nauplii"), 
+         ifelse((MeshSize == 150 & FlowMeterSpeed == "Regular" & Classification != "Microzooplankton & Nauplii"), 
                 round(((Count/`150_S_meso`)/`150_V_reg`),3),
-         ifelse((ZoopNetType == 150 & FlowMeterSpeed == "Low" & Classification != "Microzooplankton & Nauplii"),
+         ifelse((MeshSize == 150 & FlowMeterSpeed == "Low" & Classification != "Microzooplankton & Nauplii"),
                 round(((Count/`150_S_meso`)/`150_V_low`),3),
-         ifelse((ZoopNetType == 150 & FlowMeterSpeed == "Low" & Classification == "Microzooplankton & Nauplii"),
+         ifelse((MeshSize == 150 & FlowMeterSpeed == "Low" & Classification == "Microzooplankton & Nauplii"),
                 round(((Count/`150_S_micro` )/ `150_V_low`),3),NA)))))))))
 
 # Reduce duplicative variables that have a 150 and 50 entry
 cz2 <- cz1 %>%
-  mutate(StartTime1 = ifelse(ZoopNetType ==150, StartTime, `50_SetTime`),
-         StopTime1 = ifelse(ZoopNetType == 150, StopTime, `50_StopTime`),
-         SetTime = ifelse(ZoopNetType == 150, `150_SetTime`, `50_SetTime`),
-         FlowMeterStart = ifelse(ZoopNetType == 150, `150_ZoopStartMeter`, `50_ZoopStartMeter`),
-         FlowMeterEnd = ifelse(ZoopNetType == 150, `150_ZoopEndMeter`, `50_ZoopEndMeter`),
-         VolMeso1 = ifelse(ZoopNetType == 150, VolMeso, `50_VolMeso`),
-         SubMeso1 = ifelse(ZoopNetType == 150, SubMeso, `50_SubMeso`),
-         VolMicro1 = ifelse(ZoopNetType == 150, VolMicro, `50_VolMicro`),
-         SubMicro1 = ifelse(ZoopNetType == 150, SubMicro, `50_SubMicro`)) %>%
+  mutate(StartTime1 = ifelse(MeshSize ==150, StartTime, `50_SetTime`),
+         StopTime1 = ifelse(MeshSize == 150, StopTime, `50_StopTime`),
+         SetTime = ifelse(MeshSize == 150, `150_SetTime`, `50_SetTime`),
+         FlowMeterStart = ifelse(MeshSize == 150, `150_ZoopStartMeter`, `50_ZoopStartMeter`),
+         FlowMeterEnd = ifelse(MeshSize == 150, `150_ZoopEndMeter`, `50_ZoopEndMeter`),
+         VolMeso1 = ifelse(MeshSize == 150, VolMeso, `50_VolMeso`),
+         SubMeso1 = ifelse(MeshSize == 150, SubMeso, `50_SubMeso`),
+         VolMicro1 = ifelse(MeshSize == 150, VolMicro, `50_VolMicro`),
+         SubMicro1 = ifelse(MeshSize == 150, SubMicro, `50_SubMicro`),
+         VolSampled = ifelse(MeshSize ==150 & FlowMeterSpeed == "Regular", `150_V_reg`, 
+                             ifelse(MeshSize == 150 & FlowMeterSpeed == "Low", `150_V_low`,
+                                    ifelse(MeshSize == 50 & FlowMeterSpeed == "Regular", `50_V_reg`,
+                                           `50_V_low`))),
+         PropSubsampled = ifelse(MeshSize ==150 & Classification == "Microzooplankton & Nauplii", `150_S_micro`, 
+                             ifelse(MeshSize == 150 & Classification!= "Microzooplankton & Nauplii", `150_S_meso`,
+                                    ifelse(MeshSize == 50 & Classification == "Microzooplankton & Nauplii", `50_S_micro`,
+                                           `50_S_micro`)))) %>%
   select(-c(StartTime:`50_ZoopEndMeter`, VolMeso:`50_SubMicro`))
 
 # Merge physical data
@@ -204,7 +213,7 @@ zoop_all_1 <- zoop_all_0 %>%
          SubMeso=SubMeso1,
          StartTime = StartTime1,
          StopTime = StopTime1) %>%
-  arrange(Year, Date, Time, StationCode, ZoopNetType) %>%
+  arrange(Year, Date, Time, StationCode, MeshSize) %>%
   mutate(Flowdiff = FlowMeterEnd-FlowMeterStart)
 
 
@@ -216,11 +225,12 @@ zoop_all_2 <- zoop_all_1[, c("PhysicalDataID", "ZoopsDataID",
                          "FlowMeterSpeed", "SetTime", 
                          "FlowMeterStart", "FlowMeterEnd", "Flowdiff",
                          "VolMeso", "SubMeso", "VolMicro", "SubMicro", 
-                         "Subsample", "FieldComments", "LabComments",
+                         "Subsample", "PropSubsampled", "VolSampled",
+                         "FieldComments", "LabComments",
                          "OrganismID", "Classification", "Organism", "Phylum",
                          "Subphylum", "Class", "Subclass", "Infraclass", "Superorder", "Order",
                         "Suborder", "Infraorder", "Superfamily", "Family", "Genus", "Species",
-                         "TaxonName", "TaxonRank", "CommonName", "LifeStage", "Count", "ZoopNetType", "CPUE", "Flag_PQC", "Comment_PQC")]
+                         "TaxonName", "TaxonRank", "CommonName", "LifeStage", "Count", "MeshSize", "CPUE", "Flag_PQC", "Comment_PQC")]
 
 # Filter down just to SHR/STTD
 zoop_all <- zoop_all_2 %>%
@@ -229,20 +239,14 @@ zoop_all <- zoop_all_2 %>%
   drop_na(CPUE)
 
 # Reorder levels
-zoop_all$ZoopNetType <- as.factor(zoop_all$ZoopNetType)
-levels(zoop_all$ZoopNetType) <- c("50_micron", "150_micron")
+zoop_all$MeshSize <- as.factor(zoop_all$MeshSize)
+levels(zoop_all$MeshSize) <- c("50_micron", "150_micron")
 
-# Add NAs
-zoop_all <- zoop_all %>%
-  mutate(Tide = replace(Tide, Tide == "", NA),
-         WeatherCode = replace(WeatherCode, WeatherCode == "", NA))
-
-# Write file if you want
-# write.csv(zoop_all, "R_write/zoop_merged.csv")
 ```
 
 # Visualization
 ### 7. Visualize and Summarize Flowmeter data
+#### Flowdiff = Flowmeter end - Flowmeter start
 
 ```{r Flow, message = FALSE, warning = FALSE}
 
@@ -253,37 +257,37 @@ Flowmeter <- zoop_all %>%
 
 ### Histogram by net type
 ggplot(Flowmeter, aes(Flowdiff)) + geom_histogram(binwidth = 500) +
-  facet_wrap(~ZoopNetType) + theme_bw()
+  facet_wrap(~MeshSize) + theme_bw()
 
 ### Make datasets
-# Look at flow values by month
+# Look at flowdiff values by month
 Flow_yr_month <- Flowmeter %>%
-  group_by(ZoopNetType, Year, MonthAbb) %>%
-  select(ZoopNetType,Year,MonthAbb,Flowdiff) %>%
+  group_by(MeshSize, Year, MonthAbb) %>%
+  select(MeshSize,Year,MonthAbb,Flowdiff) %>%
   summarize(max.flow = max(Flowdiff),
             median.flow = median(Flowdiff),
             min.flow = min(Flowdiff))
 
-# Look at flow values by month
+# Look at flowdiff values by month
 Flow_month <- Flowmeter %>%
-  group_by(ZoopNetType,MonthAbb) %>%
+  group_by(MeshSize,MonthAbb) %>%
   summarize(max.flow = max(Flowdiff),
             median.flow = median(Flowdiff),
             min.flow = min(Flowdiff))
 
 ### Boxplots
 ggplot(Flowmeter, aes(MonthAbb, Flowdiff)) + 
-  geom_boxplot(fill = "#26bb11") + labs(title = "Boxplot: All Flows") + theme_bw() + facet_wrap(~ZoopNetType)
+  geom_boxplot(fill = "#26bb11") + labs(title = "Boxplot: All Flows") + theme_bw() + facet_wrap(~MeshSize)
 
 ggplot(Flow_yr_month, aes(MonthAbb, median.flow)) + geom_boxplot(fill = "#00acee") + 
-  facet_wrap(~ZoopNetType) +labs(title = "Boxplot: Median flow over multiple years") + theme_bw()
+  facet_wrap(~MeshSize) +labs(title = "Boxplot: Median flow over multiple years") + theme_bw()
 
 
 ### Table of values
 # Calculate median, lower and upper ranges for each day
 Flow.sum <- Flowmeter %>%
   filter(StationCode == "STTD" | StationCode == "SHR") %>%
-  group_by(StationCode, ZoopNetType, FlowMeterSpeed) %>%
+  group_by(StationCode, MeshSize, FlowMeterSpeed) %>%
    summarize(min.Flowdiff = min(Flowdiff),
              max.Flowdiff = max(Flowdiff),
              median.Flowdiff = median(Flowdiff))
@@ -298,7 +302,7 @@ kable(Flow.sum) %>%
 
 ```{r cpue vis}
 ## Plots
-ggplot(zoop_all, aes(Date, CPUE, col = ZoopNetType))+ geom_jitter() +
+ggplot(zoop_all, aes(Date, CPUE, col = MeshSize))+ geom_jitter() +
   facet_wrap(~StationCode, scales = "free")+
   theme_bw() +
   scale_colour_manual(values = c("hotpink4", "turquoise4")) 
@@ -310,7 +314,7 @@ plist <- by(zoop_all, zoop_all$Year, function(i) {
   p <- ggplot(i)+
     geom_point(aes(Date, CPUE)) +
     scale_x_date(breaks = "15 days", labels = date_format("%m/%d/%Y")) +
-    facet_wrap(~ZoopNetType, scales = "free_y") +
+    facet_wrap(~MeshSize, scales = "free_y") +
     theme_bw() +
     theme(axis.text.x = element_text(angle = 90, hjust = 1))
 })
@@ -350,23 +354,23 @@ zoop_forreview_0 <- zoop_all %>%
 # Conditions for Flag 5: Flowdiff<200, 20000+
 # Codes: FMLOW/FMHIGH
 zoop_forreview_150 <- zoop_forreview_0 %>%
-  filter(ZoopNetType == "150_micron") %>%
+  filter(MeshSize == "150_micron") %>%
   mutate(Flag_QC1 = ifelse(((Flowdiff < 400 & Flowdiff > 199) | 
                              (Flowdiff > 9999 & Flowdiff<20000)), 3, 
                     ifelse((Flowdiff <200 | Flowdiff > 19999), 5, 1))) %>%
   mutate(Comment_QC1 = ifelse(Flowdiff< 400, "FMLOW",
-                              ifelse(Flowdiff > 9999 , "FMHIGH", "")))
+                              ifelse(Flowdiff > 9999 , "FMHIGH", NA)))
   
 # Separate table for 50 data: 100-199, 5000-9999
 # Conditions for Flag 5: Flowdiff <100, 10000+
 # Codes: FMLOW/FMHIGH
 zoop_forreview_50 <- zoop_forreview_0 %>%
-  filter(ZoopNetType == "50_micron") %>%
+  filter(MeshSize == "50_micron") %>%
   mutate(Flag_QC1 = ifelse(((Flowdiff > 99 & Flowdiff < 200) |
                             (Flowdiff > 4999 & Flowdiff<10000)), 3, 
          ifelse((Flowdiff <100 | Flowdiff > 9999), 5, 1))) %>%
   mutate(Comment_QC1 = ifelse(Flowdiff< 200, "FMLOW", 
-         ifelse(Flowdiff > 4999, "FMHIGH", "")))
+         ifelse(Flowdiff > 4999, "FMHIGH", NA)))
 
 # Merge 150-50 data
 zoop_forreview_1 <- rbind(zoop_forreview_150, zoop_forreview_50)
@@ -376,11 +380,11 @@ zoop_forreview_1 <- rbind(zoop_forreview_150, zoop_forreview_50)
 # This file is merged in. 
 # See metadata for what classifies as Flag 3 vs. Flag 5
 # QC Comment = SAMP
-qcsamp_sub <- qcsamp %>% select(c("ZoopsDataID", "Flag_QC2", "Comment_QC2", "ZoopNetType"))
-zoop_forreview_2 <- left_join(zoop_forreview_1, qcsamp_sub, by = c("ZoopsDataID", "ZoopNetType"))
+qcsamp_sub <- qcsamp %>% select(c("ZoopsDataID", "Flag_QC2", "Comment_QC2", "MeshSize"))
+zoop_forreview_2 <- left_join(zoop_forreview_1, qcsamp_sub, by = c("ZoopsDataID", "MeshSize"))
 zoop_forreview_2 <- zoop_forreview_2 %>%
   mutate(Flag_QC2 = replace(Flag_QC2, is.na(Flag_QC2), 1)) %>%
-  mutate(Comment_QC2 = replace(Comment_QC2, is.na(Comment_QC2), ""))
+  mutate(Comment_QC2 = replace(Comment_QC2, is.na(Comment_QC2), NA))
 
 zoop_forreview_2$Date <- as.Date(zoop_forreview_2$Date, format = "%m/%d/%y")
 
@@ -389,7 +393,7 @@ zoop_forreview_2$Date <- as.Date(zoop_forreview_2$Date, format = "%m/%d/%y")
 
 ### 10. Add CPUE Flag (Flag3) if value above upper limit
 * First remove all Flags of 5 from previous two steps for calculating upper limit (ul) of CPUE outlier
-* Calculate ul for outlier by WYClass, StationCode, ZoopNetType, FlowMeterSpeed
+* Calculate ul for outlier by WYClass, StationCode, MeshSize, FlowMeterSpeed
 * Flag any CPUE > ul
 ```{r CPUE Flag}
 ### Calculate CPUE limits
@@ -400,14 +404,14 @@ zoop_forreview_CPUE_0 <- zoop_forreview_2 %>%
 
 # Sum CPUE by day
 CPUE_sum <- zoop_forreview_CPUE_0 %>%
-  group_by(WYClass, StationCode, ZoopNetType, FlowMeterSpeed, Date) %>%
+  group_by(WYClass, StationCode, MeshSize, FlowMeterSpeed, Date) %>%
   summarize(CPUE.total = sum(CPUE))
 
 # Which CPUE values are outliers? 
 # Calculate CPUE median, quantiles, interquartile range, upper and lower limit by 
-# WYClass, StationCode, ZoopNetType, FlowMeterSpeed
+# WYClass, StationCode, MeshSize, FlowMeterSpeed
 CPUE_quantiles <- CPUE_sum %>%
-  group_by(WYClass, StationCode, ZoopNetType, FlowMeterSpeed) %>% 
+  group_by(WYClass, StationCode, MeshSize, FlowMeterSpeed) %>% 
   summarize(CPUE.median = median(CPUE.total),
             Q1 = quantile(CPUE.total, probs = 0.25), 
             Q3 = quantile(CPUE.total, probs = 0.75),
@@ -425,30 +429,30 @@ zoop_forreview_CPUE_1 <- left_join(zoop_forreview_2, CPUE_quantiles)
 # Flag if CPUE>ul
 zoop_forreview_3 <-  zoop_forreview_CPUE_1 %>%
   mutate(Flag_QC3 = ifelse(CPUE>ul, 3, 1),
-         Comment_QC3 = ifelse(CPUE>ul, "CPUE", "")) %>%
+         Comment_QC3 = ifelse(CPUE>ul, "CPUE", NA)) %>%
   select(-c(CPUE.median, ul))
 
 ```
 
-### 11. Recalculate values for Flowmeter Difference, CPUE
-* Group by WYClass, StationCode, ZoopNetType, FlowMeterSpeed, calculate Flowdiff mean and median.
+### 11. Recalculate values for Flowmeter Difference, CPUE, VolSampled
+* Group by WYClass, StationCode, MeshSize, FlowMeterSpeed, calculate Flowdiff mean and median.
 * "Replace" Flowmeter values if flag=5 (created new column Flowdiff_ed)
-* "Replace" CPUE if Flowmeter value was changed (creadted new column CPUE_ed) 
-* Change flag of 5 to flag of 7
+* "Replace" CPUE (and VolSampled) if Flowmeter value was changed (created new column CPUE_ed and VolSampled_ed) 
+* Change flag of 5 to flag of 7 (flagged and replaced value)
 
 ```{r replacement}
 ############### Replace data ########################################
 ### Replace Flowdiffs for Flag_QC1=5
 # Calculate replacement value based on initial dataset, where flags of 5 were removed 
 fm_replacevals <- zoop_forreview_CPUE_0 %>%
-  group_by(WYClass, StationCode, ZoopNetType, FlowMeterSpeed) %>% 
+  group_by(WYClass, StationCode, MeshSize, FlowMeterSpeed) %>% 
   summarize(Flowdiff.mean = round(mean(Flowdiff),0),
             Flowdiff.median = median(Flowdiff),
             Flowdiff.max = max(Flowdiff),
             n= n())
 
 # Look at distribution to make sure it makes sense
-ggplot(fm_replacevals, aes(WYClass, Flowdiff.mean, fill = FlowMeterSpeed, group = ZoopNetType)) +
+ggplot(fm_replacevals, aes(WYClass, Flowdiff.mean, fill = FlowMeterSpeed, group = MeshSize)) +
   facet_wrap(~StationCode) + geom_col(position = "dodge2") + 
   theme_bw() +scale_fill_manual(values = c("hotpink4", "turquoise4")) 
 
@@ -457,7 +461,7 @@ zoop_replace_FM <- left_join(zoop_forreview_3, fm_replacevals) %>%
   #mutate(Flowdiff = replace(Flowdiff, Flag_QC1 == 5, Flowdiff.mean[Flag_QC1 == 5]))
  mutate(Flowdiff_ed = ifelse(Flag_QC1 == 5, Flowdiff.mean, Flowdiff))
 
-# Replace CPUE based on new Flowdiff values (new column)
+# Replace CPUE and VolSampled based on new Flowdiff values (new column)
 zoop_replace_CP <- zoop_replace_FM %>%
   mutate(V_reg = (pi*0.25/4)*(Flowdiff_ed*26873/999999),
          V_low = (pi*0.25/4)*(Flowdiff_ed*57560/999999),
@@ -470,11 +474,12 @@ zoop_replace_CP <- zoop_replace_FM %>%
          ifelse((FlowMeterSpeed == "Low" & Classification != "Microzooplankton & Nauplii"),
                 round(((Count/S_meso)/V_low),3),
          ifelse((FlowMeterSpeed == "Low" & Classification == "Microzooplankton & Nauplii"),
-                round(((Count/S_micro)/ V_low),3),NA))))) #%>%
-  #select(-c(V_reg:S_meso))
+                round(((Count/S_micro)/ V_low),3),NA))))) %>%
+  mutate(VolSampled_ed = ifelse(FlowMeterSpeed == "Regular", round(V_reg,3), round(V_low,3)))
+
 
 # Check to make sure things look right
-check <- zoop_replace_CP %>% select(c(Date,ZoopNetType, CPUE, CPUE_ed, Count, FlowMeterSpeed, 
+check <- zoop_replace_CP %>% select(c(Date,MeshSize, CPUE, CPUE_ed, Count, FlowMeterSpeed, 
                                       V_reg, V_low,S_micro, S_meso,Flowdiff, Flowdiff_ed, LabComments,Flag_QC1,
                                       Classification,TaxonName, ZoopsDataID, OrganismID)) %>%
   arrange(desc(Flag_QC1), CPUE_ed, ZoopsDataID)
@@ -494,8 +499,9 @@ zoop_replaced <-  zoop_replace_CP %>%
 zoop_final <- zoop_replaced[,c("Date", "Time", "StationCode", "WeatherCode", "Tide", "WY", 
                                "WaterTemperature", "Secchi", "Conductivity", "SpCnd", "pH", 
                                "DO", "Turbidity", "MicrocystisVisualRank", "ConditionCode", "FieldComments",
-                               "LabComments", "ZoopNetType", "FlowMeterSpeed", "SetTime", "FlowMeterStart", "FlowMeterEnd",
+                               "LabComments", "MeshSize", "FlowMeterSpeed", "SetTime", "FlowMeterStart", "FlowMeterEnd",
                                "Flowdiff", "Flowdiff_ed", "VolMeso", "SubMeso", "VolMicro", "SubMicro", "Subsample",
+                               "PropSubsampled", "VolSampled", "VolSampled_ed",
                                "OrganismID", "TaxonName", "TaxonRank", "LifeStage",
                                "Count", "CPUE", "CPUE_ed", "Flag_PQC", "Comment_PQC", 
                                "Flag_QC1", "Comment_QC1", "Flag_QC2", "Comment_QC2", "Flag_QC3",
@@ -503,20 +509,31 @@ zoop_final <- zoop_replaced[,c("Date", "Time", "StationCode", "WeatherCode", "Ti
 zoop_final <- zoop_final %>%
   arrange(Date, Time, StationCode, TaxonName)
 
-
 # Plot CPUE
-ggplot(zoop_replaced, aes(x = ZoopNetType, y = CPUE_ed, col = ZoopNetType)) +
+ggplot(zoop_final, aes(x = MeshSize, y = CPUE_ed, col = MeshSize)) +
   facet_wrap(~StationCode, scales = "free") + 
   scale_colour_manual(values = c("turquoise4", "hotpink4")) +
   geom_jitter() + theme_bw() 
 
+# Replace blanks with NA
+empty_as_na <- function(x){
+    if("factor" %in% class(x)) x <- as.character(x) ## since ifelse wont work with factors
+    ifelse(as.character(x)!="", x, NA)
+}
+
+zoop_final <- zoop_final %>%
+  mutate_each(list(empty_as_na),16:44)
+```
+
+### 13. Write file
+
+```{r write}
 # Write File
 today = format(today(),"%Y%m%d")
 write.csv(zoop_final, paste0("R_write/Zooplankton_Data_EDI_", today, ".csv"))
 ```
 
-
-### 13. Amount of zoop data replaced
+### 14. Amount of zoop data replaced
 ```{r Calculate replaced}
 ## Optional: Create one flag column only?
 zoop_forreview_flag <- zoop_final %>%
@@ -528,7 +545,7 @@ sevens <- zoop_forreview_flag %>%
   filter(grepl("7", QC_Flags ))
 
 ## Amount replaced
-nrow(sevens)/nrow(zoop_final)
+print(paste0(round(nrow(sevens)/nrow(zoop_final)*100,3), "% replaced"))
 ```
 
 
