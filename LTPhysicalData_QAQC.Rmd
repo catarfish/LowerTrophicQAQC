@@ -1,14 +1,14 @@
 ---
 title: "LTPhysicalData_QAQC"
 author: "Catarina Pien"
-date: "May 3, 2019"
+date: "April 2020"
 output: html_document
 editor_options: 
   chunk_output_type: console
 ---
 ```{r set-options, echo=FALSE, cache=FALSE}
 
-options(width = 10000)
+options(fig.width = 12)
 rm(list=ls(all=TRUE))
 ```
 
@@ -18,13 +18,15 @@ rm(list=ls(all=TRUE))
 
 rm(list=ls(all=TRUE))
 
-if(!require(tidyverse)) {install.packages("tidyr")
+if(!require(tidyverse)) {install.packages("tidyverse")
   library(tidyverse)}
-if(!require(gridExtra)) {install.packages("tidyr")
+if(!require(lubridate)) {install.packages("lubridate")
+  library(lubridate)}
+if(!require(gridExtra)) {install.packages("gridExtra")
   library(gridExtra)}
-if(!require(kableExtra)) {install.packages("tidyr")
+if(!require(kableExtra)) {install.packages("kableExtra")
   library(kableExtra)}
-if(!require(knitr)) {install.packages("tidyr")
+if(!require(knitr)) {install.packages("knitr")
   library(knitr)}
 
 ```
@@ -97,12 +99,12 @@ VisPoint <-  function(data,y) {
         legend.position = "bottom")
 } 
 
-# Histogram by Station, y = variable of interest
-VisHist <-  function(data,x, bin) {
-    x <- enquo(x)
+# Histogram by Station, y = variable of interest, binwidth
+VisHist <-  function(data,y, bin) {
+    y <- enquo(y)
   data %>%
     ggplot() +
-    geom_histogram(mapping = aes(!! x,col = StationCode),binwidth = bin, fill = "lightseagreen", colour = "lightgray") +
+    geom_histogram(mapping = aes(!! y,col = StationCode),binwidth = bin, fill = "lightseagreen", colour = "lightgray") +
     facet_wrap(~StationCode, scales = "free_x") +
     theme_bw() +
   scale_colour_manual(values = c("coral3", "lightseagreen"))+
@@ -506,8 +508,8 @@ phys_yolo$Date[phys_yolo$PhysicalDataID==1752] <-as.Date("2018-09-27", format = 
 phys_yolo$pH[phys_yolo$PhysicalDataID==1752] <- 8.13
 
 # Formatting
-phys_yolo$Time[phys_yolo$PhysicalDataID==401] <- as.hms("13:22:00", "%H:%m:%S")
-phys_yolo$Time[phys_yolo$PhysicalDataID==1602] <- as.hms("13:50:00", "%H:%m:%S")
+phys_yolo$Time[phys_yolo$PhysicalDataID==401] <- hms("13:22:00")
+phys_yolo$Time[phys_yolo$PhysicalDataID==1602] <- hms("13:50:00")
 
 # Remove rows with no data
 phys_yolo <- phys_yolo%>%
@@ -586,6 +588,16 @@ grid.arrange(p.temp, p.ec, p.spc, p.secchi, p.turb, p.do, p.pH, ncol = 2)
 
 ### 15. Write file
 ```{r Write file, message = FALSE, warning = FALSE}
+
+# Replace blanks with NA
+empty_as_na <- function(x){
+    if("factor" %in% class(x)) x <- as.character(x) ## since ifelse wont work with factors
+    ifelse(as.character(x)!="", x, NA)
+}
+
+phys_yolo_flag <- phys_yolo_flag %>%
+  mutate_each(list(empty_as_na),5:20)
+
 # Write cleaned up file to be used later (merged with zooplankton, etc.)
 write.csv(phys_yolo_flag, "Data/LT_phys_qc.csv")
 ```
