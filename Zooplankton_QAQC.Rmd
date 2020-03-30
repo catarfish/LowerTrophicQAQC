@@ -99,6 +99,10 @@ zoop_catch$OrganismID[zoop_catch$OrganismID==71] <- 58
 zoop_catch$OrganismID[zoop_catch$ZoopsDataID==882] <- 64
 zoop_catch$OrganismID[zoop_catch$ZoopsDataID==1005] <- 64
 
+# Two subsample volumes are incorrect (confirmed with contractor)
+zoop_ref$SubMicro[zoop_ref$ZoopsDataID == 1210] <- 1.5
+zoop_ref$VolMicro[zoop_ref$ZoopsDataID == 1129] <- 55
+
 # Change Flowmeter Values based on field sheets. 
 zoop_ref$`50_ZoopEndMeter`[zoop_ref$ZoopsDataID==799] <- 990000
 zoop_ref$`50_ZoopEndMeter`[zoop_ref$ZoopsDataID %in% c(955,968,1000)] <- 1000000
@@ -109,7 +113,6 @@ zoop_ref <- zoop_ref %>% filter(ZoopsDataID != 766)
 # Calculate Flowdiff: difference between Start and End flowmeter
 zoop_ref <- zoop_ref %>%  mutate(`150_Flowdiff` = (`150_ZoopEndMeter`-`150_ZoopStartMeter`),
     `50_Flowdiff` = (`50_ZoopEndMeter`-`50_ZoopStartMeter`))
-
 ```
 
 ### 5. Merge tables, calculate CPUE
