@@ -1,7 +1,7 @@
 ---
 title: "Zoop_QAQC"
 author: "Catarina Pien"
-date: "April 2020"
+date: "April 6 2020"
 output: html_document
 editor_options: 
   chunk_output_type: console
@@ -186,7 +186,7 @@ cz2 <- cz1 %>%
          SubMeso1 = ifelse(MeshSize == 150, SubMeso, `50_SubMeso`),
          VolMicro1 = ifelse(MeshSize == 150, VolMicro, `50_VolMicro`),
          SubMicro1 = ifelse(MeshSize == 150, SubMicro, `50_SubMicro`),
-         VolSampled = ifelse(MeshSize ==150 & FlowMeterSpeed == "Regular", `150_V_reg`, 
+         VolNet = ifelse(MeshSize ==150 & FlowMeterSpeed == "Regular", `150_V_reg`, 
                              ifelse(MeshSize == 150 & FlowMeterSpeed == "Low", `150_V_low`,
                                     ifelse(MeshSize == 50 & FlowMeterSpeed == "Regular", `50_V_reg`,
                                            `50_V_low`))),
@@ -228,7 +228,7 @@ zoop_all_2 <- zoop_all_1[, c("PhysicalDataID", "ZoopsDataID",
                          "FlowMeterSpeed", "SetTime", 
                          "FlowMeterStart", "FlowMeterEnd", "Flowdiff",
                          "VolMeso", "SubMeso", "VolMicro", "SubMicro", 
-                         "Subsample", "PropSubsampled", "VolSampled",
+                         "Subsample", "PropSubsampled", "VolNet",
                          "FieldComments", "LabComments",
                          "OrganismID", "Classification", "Organism", "Phylum",
                          "Subphylum", "Class", "Subclass", "Infraclass", "Superorder", "Order",
@@ -437,10 +437,10 @@ zoop_forreview_3 <-  zoop_forreview_CPUE_1 %>%
 
 ```
 
-### 11. Recalculate values for Flowmeter Difference, CPUE, VolSampled
+### 11. Recalculate values for Flowmeter Difference, CPUE, VolNet
 * Group by WYClass, StationCode, MeshSize, FlowMeterSpeed, calculate Flowdiff mean and median.
 * "Replace" Flowmeter values if flag=5 (created new column Flowdiff_ed)
-* "Replace" CPUE (and VolSampled) if Flowmeter value was changed (created new column CPUE_ed and VolSampled_ed) 
+* "Replace" CPUE (and VolNet) if Flowmeter value was changed (created new column CPUE_ed and VolNet_ed) 
 * Change flag of 5 to flag of 7 (flagged and replaced value)
 
 ```{r replacement}
@@ -464,7 +464,7 @@ zoop_replace_FM <- left_join(zoop_forreview_3, fm_replacevals) %>%
   #mutate(Flowdiff = replace(Flowdiff, Flag_QC1 == 5, Flowdiff.mean[Flag_QC1 == 5]))
  mutate(Flowdiff_ed = ifelse(Flag_QC1 == 5, Flowdiff.mean, Flowdiff))
 
-# Replace CPUE and VolSampled based on new Flowdiff values (new column)
+# Replace CPUE and VolNet based on new Flowdiff values (new column)
 zoop_replace_CP <- zoop_replace_FM %>%
   mutate(V_reg = (pi*0.25/4)*(Flowdiff_ed*26873/999999),
          V_low = (pi*0.25/4)*(Flowdiff_ed*57560/999999),
@@ -478,7 +478,7 @@ zoop_replace_CP <- zoop_replace_FM %>%
                 round(((Count/S_meso)/V_low),3),
          ifelse((FlowMeterSpeed == "Low" & Classification == "Microzooplankton & Nauplii"),
                 round(((Count/S_micro)/ V_low),3),NA))))) %>%
-  mutate(VolSampled_ed = ifelse(FlowMeterSpeed == "Regular", round(V_reg,3), round(V_low,3)))
+  mutate(VolNet_ed = ifelse(FlowMeterSpeed == "Regular", round(V_reg,3), round(V_low,3)))
 
 
 # Check to make sure things look right
@@ -504,7 +504,7 @@ zoop_final <- zoop_replaced[,c("Date", "Time", "StationCode", "WeatherCode", "Ti
                                "DO", "Turbidity", "MicrocystisVisualRank", "ConditionCode", "FieldComments",
                                "LabComments", "MeshSize", "FlowMeterSpeed", "SetTime", "FlowMeterStart", "FlowMeterEnd",
                                "Flowdiff", "Flowdiff_ed", "VolMeso", "SubMeso", "VolMicro", "SubMicro", "Subsample",
-                               "PropSubsampled", "VolSampled", "VolSampled_ed",
+                               "PropSubsampled", "VolNet", "VolNet_ed",
                                "OrganismID", "TaxonName", "TaxonRank", "LifeStage",
                                "Count", "CPUE", "CPUE_ed", "Flag_PQC", "Comment_PQC", 
                                "Flag_QC1", "Comment_QC1", "Flag_QC2", "Comment_QC2", "Flag_QC3",

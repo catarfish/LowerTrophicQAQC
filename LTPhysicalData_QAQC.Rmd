@@ -1,7 +1,7 @@
 ---
 title: "LTPhysicalData_QAQC"
 author: "Catarina Pien"
-date: "April 2020"
+date: "April 6 2020"
 output: html_document
 editor_options: 
   chunk_output_type: console
@@ -12,7 +12,7 @@ options(fig.width = 12)
 rm(list=ls(all=TRUE))
 ```
 
-## 1.Setup Libraries
+## 1.Setup and Download libraries
 
 ```{r setup, results=FALSE, warning = FALSE, message = FALSE}
 
@@ -32,7 +32,7 @@ if(!require(knitr)) {install.packages("knitr")
 ```
 
 
-## 2. Plot functions
+## 2. Plotting functions
 
 ```{r plotfunctions}
 
@@ -384,7 +384,7 @@ grid.arrange(sec.tur, do.temp, spc.ec, ec.spc)
 ```
 
 
-## 10. Check against Lisbon data
+## 10. Check against Lisbon data, this part can be slow
 ```{r Lisbon Check Yolo, message = FALSE, warning = FALSE}
 #Sensors
   #Water Temp in F =25  (2008)
@@ -522,6 +522,11 @@ phys_yolo %>%
 
 
 ### 13. Flag Data
+* Flag data 
+* 7: Replaced (above changes, mostly typos)
+* 3: Suspect data, based on plots, but not out of the realm of possibility, not confirmed in field data
+* 1: Pass
+* Include comment to say which variable is flagged/replaced.
 ```{r Flag, message = FALSE, warning = FALSE}
 # Lists for flags and flag comments
 # Modified data due to typos
@@ -553,8 +558,6 @@ phys_yolo_flag <- phys_yolo %>%
 
 phys_yolo_flag$Flag_PQC <- as.factor(phys_yolo_flag$Flag_PQC)
 
-phys_yolo_flag %>%
-  filter(Turbidity>200)
 ```
 
 ## 14. Plot QCed data
