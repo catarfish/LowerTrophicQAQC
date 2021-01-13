@@ -1,11 +1,13 @@
 ---
 title: "Drift_QAQC"
 author: "Catarina Pien"
-date: "May 23, 2019"
+date: "September 18, 2020"
 output: html_document
 editor_options: 
   chunk_output_type: console
 ---
+YBFMP Drift Invertebrate Data 1998 - 2019
+
 
 ```{r set-options, echo=FALSE, cache=FALSE}
 
@@ -18,126 +20,687 @@ options(width = 10000)
 
 rm(list=ls(all=TRUE))
 
-library(readr)
-library(dplyr)
-library(ggplot2)
-library(lubridate)
-library(tidyr)
+library(tidyverse)
 library(gridExtra)
 library(stringr)
-
+library(readr)
+library(lubridate)
 ```
 
 ## 2.Load Data, Check Variable Types
 
 ```{r load, results = FALSE, warning = FALSE, message = FALSE}
 # Load data - several tables
-setwd("C:/Users/cpien/OneDrive - California Department of Water Resources/Work/Database/R_code/")
-phys <- read_csv("Data/QC/LT_phys_qc.csv")
-inv_catch <- read_csv("Data/TblInvertCatchData.csv")
-inv_ref <- read_csv("Data/TblInvertebrates.csv")
-inv_tax <- read_csv("Data/Drift_Taxonomy.csv")
-inv_tax_2 <- read_csv("Data/TblInvertsLookUpV2.csv")
+phys <- read_csv("Data/Drift/LT_phys_qc_20201125.csv")
+catch <- read_csv("Data/Drift/Drift_Catch_20200918.csv")
+samp <- read_csv("Data/Drift/Drift_Samplings_20200918.csv")
+tax <- read_csv("Data/Drift/Drift_Taxonomy.csv")
+wy <- read_csv("Data/WaterYearType_CDEC.csv") 
+#inv_tax_2 <- read_csv("Data/TblInvertsLookUpV2.csv")
 
 # Add and change date formats
-phys$SampleDate<-as.Date(phys$SampleDate,"%m/%d/%Y")
-phys$Year <- ordered(year(phys$SampleDate))
-phys$Month <- ordered(month(phys$SampleDate))
-phys$MonthAbb <-ordered(phys$MonthAbb,levels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
+phys$Date<-as.Date(phys$Date,"%m/%d/%Y")
+phys$Year <- year(phys$Date)
+phys$Month <- month(phys$Date)
+phys$MonthAbb <-ordered(phys$Month,levels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
 phys$Datetime = as.POSIXct(phys$Datetime, 
                            format = "%Y-%m-%d %H:%M:%S")
+catch$Time <- as.POSIXct(catch$Time,
+                         format = "%m/%d/%Y %H:%M")
+# Add and change date formats
+samp$Date<-as.Date(samp$Date,"%m/%d/%Y")
+samp$`Date/Time` = as.POSIXct(samp$`Date/Time`, 
+                           format = "%m/%d/%Y %H:%M:%S")
 
-# str(phys)
-# str(zoop)
+str(phys)
+str(catch)
 ```
 
-## 3.Check variables
+## 3.Rename variables
 ```{r filter, results = FALSE, message = FALSE, warning = FALSE}
+catch <- catch %>%
+  mutate(SamplingID = str_extract(`Sampling number`, "[^/]+")) %>%
+  rename(Datetime = Time,
+         TaxonName = Observable,
+         LifeStage = `Life Stage`) %>%
+  select(-c(Value, `Sampling number`))
+catch$SamplingID = as.numeric(catch$SamplingID)
 
-
+samp <- samp %>% 
+  rename(SamplingID = `Sampling number`,
+         Datetime = `Date/Time`,
+         InvertDataID = `Invertebrate Data ID`,
+         ConditionCode = `Condition Code`,
+         SetTime = `Set Time`,
+         FlowMeterSpeed = `Flow Meter Speed`,
+         FlowMeterStart = `Flow Meter Start`,
+         FlowMeterEnd = `Flow Meter End`,
+         LabComments = `Lab Comments`,
+         FieldComments = `Field Comments`) %>%
+  select(-`Invertebrate Catch ID`)
+samp$SamplingID <- as.numeric(samp$SamplingID)
+summary(samp)
 ```
 
 ## 4. Make changes that need to be made to data
 ```{r Changes to data, message = FALSE, warning = FALSE}
-haplo <- c(3,6,90)
-tromb <- c(123,146)
-inv_tax_2$Phylum[inv_tax_2$Phylum=="Anthropoda"] <- "Arthropoda"
-inv_tax_2$Class[inv_tax_2$Class=="Hirudinea"] <- "Clitellata"
-inv_tax_2$Order[inv_tax_2$OrganismID%in%haplo] <- "Crassiclitellata"
-inv_tax_2$Order[inv_tax_2$OrganismID == 2] <- "Enchytraeida"
-inv_tax_2$Order[inv_tax_2$Order=="Canipalpata"] <- "Sabellida"
-inv_tax_2$Order[inv_tax_2$OrganismID==155] <- "Oribatida"
-inv_tax_2$Order[inv_tax_2$OrganismID%in%tromb] <- "Trombidiformes"
-inv_tax_2$Order[inv_tax_2$Order=="Veneroida"] <- "Sphaeriida"
-inv_tax_2$Order[inv_tax_2$Order=="Basommatophora"] <- "Hygrophila"
-inv_tax_2$Order[inv_tax_2$Order=="Veneoida"] <- "Venerida"
-inv_tax_2$Order[inv_tax_2$Order=="Araneida"] <- "Araneae"
-inv_tax_2$Family[inv_tax_2$Family=="Diplura"] <- "Dipluridae"
+# Need to change flowmeter value for negative
 
-
-
-inv_tax_2$OrganismID[inv_tax_2$OrganismID==65] <- 71
-inv_tax_2$OrganismID[inv_tax_2$OrganismID==75] <- 143
-inv_tax_2$OrganismID[inv_tax_2$OrganismID==5] <- 4
-inv_tax_2$OrganismID[inv_tax_2$OrganismID==70] <- 157
-inv_tax_2$OrganismID[inv_tax_2$OrganismID==136] <- 57
-inv_tax_2$OrganismID[inv_tax_2$OrganismID==139] <- 126
-inv_tax_2$OrganismID[inv_tax_2$OrganismID==105] <- 144
-inv_tax_2$OrganismID[inv_tax_2$OrganismID==151] <- 135
-inv_tax_2$OrganismID[inv_tax_2$OrganismID==155] <- 125
-
-inv_catch$OrganismID[inv_catch$OrganismID==65] <- 71
-inv_catch$OrganismID[inv_catch$OrganismID==75] <- 143
-inv_catch$OrganismID[inv_catch$OrganismID==5] <- 4
-inv_catch$OrganismID[inv_catch$OrganismID==70] <- 157
-inv_catch$OrganismID[inv_catch$OrganismID==136] <- 57
-inv_catch$OrganismID[inv_catch$OrganismID==139] <- 126
-inv_catch$OrganismID[inv_catch$OrganismID==105] <- 144
-inv_catch$OrganismID[inv_catch$OrganismID==151] <- 135
-inv_catch$OrganismID[inv_catch$OrganismID==155] <- 125
-
-inv_tax_2$Family[inv_tax_2$Family=="Taltridae"] <- "Taltriidae"
-inv_tax_2$Family[inv_tax_2$Family=="Nereidae"] <- "Nereididae"
+# Old taxonomy stuff down here
+# haplo <- c(3,6,90)
+# tromb <- c(123,146)
+# inv_tax_2$Phylum[inv_tax_2$Phylum=="Anthropoda"] <- "Arthropoda"
+# inv_tax_2$Class[inv_tax_2$Class=="Hirudinea"] <- "Clitellata"
+# inv_tax_2$Order[inv_tax_2$OrganismID%in%haplo] <- "Crassiclitellata"
+# inv_tax_2$Order[inv_tax_2$OrganismID == 2] <- "Enchytraeida"
+# inv_tax_2$Order[inv_tax_2$Order=="Canipalpata"] <- "Sabellida"
+# inv_tax_2$Order[inv_tax_2$OrganismID==155] <- "Oribatida"
+# inv_tax_2$Order[inv_tax_2$OrganismID%in%tromb] <- "Trombidiformes"
+# inv_tax_2$Order[inv_tax_2$Order=="Veneroida"] <- "Sphaeriida"
+# inv_tax_2$Order[inv_tax_2$Order=="Basommatophora"] <- "Hygrophila"
+# inv_tax_2$Order[inv_tax_2$Order=="Veneoida"] <- "Venerida"
+# inv_tax_2$Order[inv_tax_2$Order=="Araneida"] <- "Araneae"
+# inv_tax_2$Family[inv_tax_2$Family=="Diplura"] <- "Dipluridae"
+# 
+# inv_tax_2$OrganismID[inv_tax_2$OrganismID==65] <- 71
+# inv_tax_2$OrganismID[inv_tax_2$OrganismID==75] <- 143
+# inv_tax_2$OrganismID[inv_tax_2$OrganismID==5] <- 4
+# inv_tax_2$OrganismID[inv_tax_2$OrganismID==70] <- 157
+# inv_tax_2$OrganismID[inv_tax_2$OrganismID==136] <- 57
+# inv_tax_2$OrganismID[inv_tax_2$OrganismID==139] <- 126
+# inv_tax_2$OrganismID[inv_tax_2$OrganismID==105] <- 144
+# inv_tax_2$OrganismID[inv_tax_2$OrganismID==151] <- 135
+# inv_tax_2$OrganismID[inv_tax_2$OrganismID==155] <- 125
+# 
+# inv_catch$OrganismID[inv_catch$OrganismID==65] <- 71
+# inv_catch$OrganismID[inv_catch$OrganismID==75] <- 143
+# inv_catch$OrganismID[inv_catch$OrganismID==5] <- 4
+# inv_catch$OrganismID[inv_catch$OrganismID==70] <- 157
+# inv_catch$OrganismID[inv_catch$OrganismID==136] <- 57
+# inv_catch$OrganismID[inv_catch$OrganismID==139] <- 126
+# inv_catch$OrganismID[inv_catch$OrganismID==105] <- 144
+# inv_catch$OrganismID[inv_catch$OrganismID==151] <- 135
+# inv_catch$OrganismID[inv_catch$OrganismID==155] <- 125
+# 
+# inv_tax_2$Family[inv_tax_2$Family=="Taltridae"] <- "Taltriidae"
+# inv_tax_2$Family[inv_tax_2$Family=="Nereidae"] <- "Nereididae"
 
 
 ```
 
-## 5. Merge data tables, calculate CPUE, rearrange variables
-```{r cpue, message = FALSE, warning = FALSE}
+## 5. Merge data tables, calculate Flowmeter difference, rearrange variables
+```{r merge, message = FALSE, warning = FALSE}
 # Merge datasets for CPUE variables
-tax <- full_join(inv_tax, inv_tax_2, by = "OrganismID")
-catch_inv0 <- right_join(inv_ref, inv_catch, by = "InvertDataID")
-catch_inv <- left_join(catch_inv0, tax, by = "OrganismID") %>%
-  arrange(OrganismID)
+# tax <- full_join(inv_tax, inv_tax_2, by = "OrganismID")
+samp_catch <- left_join(samp, catch, by = c("SamplingID")) %>%
+  rename(Station = Station.x,
+         Datetime = Datetime.x) %>%
+  select(-c(Station.y, Datetime.y))
 
 # Merge physical data
-inv_all_0 <- right_join(phys,catch_inv, by = "PhysicalDataID")
-#inv_all_1 <- left_join(inv_all_0, yb_tax, by = "OrganismID")
+samp_catch_phys <- left_join(phys, samp_catch, by = "PhysicalDataID") %>%
+  rename(Date = Date.x,
+         Time = Time.x,
+         Datetime = Datetime.x) %>%
+  select(-c(Date.y, Time.y, Datetime.y)) %>%
+  filter(!is.na(Station)) 
+notjoinedPhysDataID <- anti_join(phys, samp_catch, by = "PhysicalDataID")
 
-# Add CPUE
-inv_all_1 <- inv_all_0 %>%
-  mutate(CPUE= ifelse(FlowMeterSpeed == "Regular", 
-                      round(Count/((0.4572*0.25)/(4*(((DriftEndMeter-DriftStartMeter) * 26873)/999999))),3),
-                      ifelse(FlowMeterSpeed == "Low", 
-                      round(Count/((0.4572*0.25)/(4*(((DriftEndMeter-DriftStartMeter) * 57560)/999999))),3),NA)))
+```
 
-# Rename some columns, remove unnecessary columns
-inv_all_2 <- inv_all_1 %>%
-   select(-c(X1, PhysicalDataID, MicrocystisVisualRank, MonthAbb, Datetime, InvertDataID, 
-             StartTime,StopTime,DriftStartMeter,DriftEndMeter,FlowMeterSpeed, FieldComments, EnteredBy, `QA/QC'dBy`,
-             InvertCode.x, SampleVolume, InvertCatchID, InvertCode.y, Classification, Phylum.y,
-             Order, Family, Class.y, Order.y, Family.y,Species.y,
-             Larvae, Pupae, Nymphs, Emergents, Adults, X14, Kingdom)) 
+Add Water Year and Water Year "Class" (W = W, D/C = D, AN/BN = A), calculate Flowdiff
+```{r}
+samp_catch_phys <- samp_catch_phys %>%
+  mutate(WY = ifelse(Month >9, Year + 1, Year)) %>%
+  left_join(wy, by = "WY") %>%
+  select(-c(WYType, Index)) %>%
+  mutate(Flowdiff = FlowMeterEnd-FlowMeterStart)
+```
+
+## QAQC 
+
+* QC Flags: 1 = Acceptable/ 2 = Suspect/ 3 = Highly Suspect
+* Flag_SAMP: Sampling issues
+* Flag_LAB: Lab issues
+* Flag_FM: Flowmeter
+* Flag_CPUE: CPUE
+
+### QAQC 1: Sampling issues
+* Write out field samples and flag those where comments indicate suspect or unuseable flowmeter values.
+
+* This part is manual. Think about how to make this codeable, change our condition code flags or add a flag as part of data entry? 
+
+```{r}
+SamplingQAQC <- filter(samp, !is.na(FieldComments) | ConditionCode>1)
+SamplingQAQC$Flag_SAMP <-  ""
+SamplingQAQC$Comment_SAMP <-""
+SamplingQAQC$Flag_LAB <- ""
+SamplingQAQC$Comment_LAB <- ""
+# write.csv(SamplingQAQC, "R_write/Drift/SamplingQAQC.csv")
+
+```
+
+* Read edited file in
+
+```{r}
+SamplingQAQC_adj <- read.csv("R_write/Drift/SamplingQAQC_Notated_20210112.csv")
+SamplingQAQC_adj_s <- SamplingQAQC_adj %>%
+  select(c(PhysicalDataID, Flag_SAMP, Comment_SAMP, Flag_LAB, Comment_LAB))
+```
+
+
+### QAQC 2: Flowmeters
+
+Initial Changes known
+```{r QAQC-Flowmeters}
+library(plotly)
+library(viridis)
+
+# Change known incorrect values
+# Change FlowMeterStart and FlowMeterEnd, Recalculate Flowdiff
+# SamplingID = 47736 Switched FlowMeterStart and FlowMeterEnd 
+samp_catch_phys$FlowMeterStart[samp_catch_phys$SamplingID==47736] <- 573926
+samp_catch_phys$FlowMeterEnd[samp_catch_phys$SamplingID==47736] <- 581200
+samp_catch_phys$Flowdiff[samp_catch_phys$SamplingID==47736] <- 581200-573926
+
+```
+
+Look at distribution of flowmeter values
+```{r}
+# Histogram of values
+samp_catch_phys$Month <- ordered(samp_catch_phys$Month)
+FlowHist <- ggplot(samp_catch_phys, aes(Flowdiff)) + geom_histogram() +
+  facet_wrap(~Station) + theme_bw()
+ggplotly(FlowHist)
+
+# SHR vs STTD boxplot
+FlowBox <- ggplot(samp_catch_phys) + geom_boxplot(aes(x = Station, y = Flowdiff)) + theme_bw()
+ggplotly(FlowBox)
+
+# SHR vs STTD boxplot by month
+FlowBoxMonth <- ggplot(samp_catch_phys) + geom_boxplot(aes(x = Month, y = Flowdiff, fill = Month)) + facet_wrap(~Station) + scale_fill_viridis(discrete = TRUE) + theme_bw() 
+ggplotly(FlowBoxMonth)
+
+# SHR vs STTD boxplot by year
+FlowBoxYear <- ggplot(samp_catch_phys) + geom_boxplot(aes(x = ordered(WY), y = Flowdiff, fill = ordered(WY))) + facet_wrap(~Station) + theme_bw() 
+ggplotly(FlowBoxYear)
+
+# SetTime vs Flowdiff by station and month
+FlowPoint <- ggplot(samp_catch_phys, aes(x = SetTime, y = Flowdiff, color = Month)) + geom_point() + facet_wrap(~Station) + theme_bw()
+ggplotly(FlowPoint)
+
+# SetTime vs Flowdiff by station and flowmeter type
+FlowPoint2 <- ggplot(samp_catch_phys, aes(x = SetTime, y = Flowdiff, color = FlowMeterSpeed)) + geom_point() + facet_wrap(~Station) + theme_bw()
+ggplotly(FlowPoint2)
+```
+
+
+Make a table of summarized flowmeter values
+Use Flowdiff/Settime to look for outliers
+```{r}
+### Table of values
+# Calculate median, lower and upper ranges for each day
+Flow.sum <- samp_catch_phys %>%
+  mutate(Flow_s = Flowdiff/SetTime) %>%
+  group_by(StationCode, FlowMeterSpeed, WYClass, Month) %>%
+  filter(!is.na(Flowdiff)) %>%
+   summarize(min.Flowdiff = min(Flowdiff),
+             max.Flowdiff = max(Flowdiff),
+             median.Flowdiff = median(Flowdiff),
+             Flow_Q1 = quantile(Flow_s, probs = 0.25), 
+            Flow_Q3 = quantile(Flow_s, probs = 0.75),
+            Flow_UL = Flow_Q3 + 1.5 * (Flow_Q3-Flow_Q1),
+            Flow_MAD = mad(Flow_s))
+```
+
+Merge QAQC1 and QAQC2 
+Replace NA with blank
+```{r}
+FM_Samp <- left_join(samp_catch_phys, SamplingQAQC_adj_s, by = "PhysicalDataID") %>%
+  mutate(Flag_SAMP = replace(Flag_SAMP, is.na(Flag_SAMP), "" ),
+         Comment_Samp = replace(Comment_SAMP, is.na(Comment_SAMP), ""))
+```
+
+##### START HERE ############
+Apply outlier definitions to data
+```{r}
+Flow.outlier <- FM_Samp %>%
+  filter(!is.na(Flowdiff)) %>%
+  group_by(StationCode, FlowMeterSpeed, WYClass, Month) %>%
+  mutate(Flow_s = Flowdiff/SetTime,
+         median.Flow_s = median(Flow_s),
+            Flow_Q1 = quantile(Flow_s, probs = 0.25), 
+            Flow_Q3 = quantile(Flow_s, probs = 0.75),
+            Flow_UL = Flow_Q3 + 1.5 * (Flow_Q3-Flow_Q1),
+            Flow_MAD = mad(Flow_s),
+            Flow_modZ = abs(0.6745*(Flow_s - median.Flow_s)/Flow_MAD),
+            Flow_Outlier = ifelse((Flow_s > Flow_UL) & Flow_modZ > 3.5, "Both", ifelse(Flow_s > Flow_UL, "Tukey", ifelse(Flow_modZ > 3.5, "MAD", 
+            "None"))))
+
+summary(factor(Flow.outlier$Flow_Outlier))
 
 ```
 
 
-## 5a. Public
+Plot outliers
 ```{r}
 
-Yolo <- c("STTD", "SHR")
+FlowBoxMonth <- ggplot(Flow.outlier) + geom_boxplot(aes(x = WYClass, y = Flow_s)) + facet_wrap(~Station) + scale_fill_viridis(discrete = TRUE) + theme_bw() 
+ggplotly(FlowBoxMonth)
+
+
+outlier2a <- ggplot(Flow.outlier, aes(x = Month, y = Flow_s, color = Flow_Outlier)) + geom_point(size = 2.5, alpha = 0.5) + facet_wrap(~Station) +   
+  theme_bw() + theme(axis.text = element_text(size = 14),
+                     axis.title = element_text(size =14),
+                     legend.text = element_text(size = 14),
+                     legend.title = element_text(size = 14), 
+                     strip.text = element_text(size = 15))
+
+ggplotly(outlier2a)
+
+
+
+outlier2b <- ggplot(Flow.outlier2, aes(x = Month, y = Flow_s, color = Flow_Outlier)) + geom_point(size = 2.5, alpha = 0.5) + facet_wrap(~Station) +   
+  theme_bw() + theme(axis.text = element_text(size = 14),
+                     axis.title = element_text(size =14),
+                     legend.text = element_text(size = 14),
+                     legend.title = element_text(size = 14), 
+                     strip.text = element_text(size = 15))
+outlier2b
+outlier2a
+ggplotly(outlier2b)
+```
+
+Flowmeter Flags and New Flowdiff calculated
+
+Flag   | Description                | Outlier                   | Flowdiff
+Flag 5 | Highly Suspect + Replaced  | See below                 | See below
+Flag 3 | Highly Suspect             | Both                      | < 200 or >= 60000
+Flag 2 | Suspect                    | Tukey or MAD but not Both | 200-999 
+Flag 1 | Acceptable                 | None                      | 1000-59999
+
+For flowmeters, all "Highly Suspect" data were replaced, so no flags of 3. This is not  
+the case for all QAQC types
+
+For flags of 2,3 the "Comment_FM" is "FM" for Flowmeter
+
+########## WORK ON REPLACEMENT EQUATION ##################
+
+```{r Flag-Replace-Flowmeters}
+################## Flag Flowmeter data: Flag_QC1 ############################
+# Mutate QC Flags 
+# Conditions for Flag 3: Outlier = Both | Flowdiff < 200 | Flowdiff >= 60000
+# Conditions for Flag 2: Outlier = Tukey | Outlier = MAD (but not Both) |Flowdiff between 200-999 
+# Conditions for Flag 1: Acceptable data
+
+# If Flag 3, replace Flowdiff with median.Flowdiff and replace Flag_FM as 5
+
+FlowmeterQAQC <- Flow.outlier %>%
+  mutate(Flag_FM = ifelse(Flow_Outlier=="Both" | Flowdiff < 200 | Flowdiff >= 60000, 3, 
+                          ifelse(Flow_Outlier %in% c("Tukey", "MAD") | Flowdiff < 1000, 2,
+                                 1)),
+        Comment_FM = ifelse(Flag_FM !=1, "FM", ""),
+        Flowdiff_adj = ifelse(Flag_FM == 3 | Comment_SAMP == "FM", median.Flowdiff_s * SetTime, Flowdiff))  %>%
+  mutate(Flag_FM = replace(Flag_FM, Flowdiff_adj != Flowdiff, 5))
+
+FlowmeterQAQC$Flag_FM <- ordered(FlowmeterQAQC$Flag_FM)
+
+summary(factor(FlowmeterQAQC$Flag_FM))
+summary(factor(FlowmeterQAQC$Flag_SAMP))
+```
+
+Plot changes
+```{r}
+outlier2b <- ggplot(FlowmeterQAQC, aes(x = Month, y = Flowdiff_adj, color = factor(Flag_FM))) + geom_point(size = 2.5, alpha = 0.5) + 
+  facet_wrap(~Station) +   
+  theme_bw() + theme(axis.text = element_text(size = 14),
+                     axis.title = element_text(size =14),
+                     legend.text = element_text(size = 14),
+                     legend.title = element_text(size = 14), 
+                     strip.text = element_text(size = 15))
+
+ggplotly(outlier2b)
+```
+
+Plot before for SAMP
+```{r}
+outlier1a <- ggplot(Flow.outlier, aes(x = Month, y = Flowdiff, color = factor(Flag_SAMP))) + geom_point(size = 2.5, alpha = 0.5) + 
+  facet_wrap(~Station) + 
+  theme_bw() + theme(axis.text = element_text(size = 14),
+                     axis.title = element_text(size =14),
+                     legend.text = element_text(size = 14),
+                     legend.title = element_text(size = 14), 
+                     strip.text = element_text(size = 15))
+
+ggplotly(outlier1a)
+```
+
+Plot changes for SAMP
+```{r}
+outlier1b <- ggplot(FlowmeterQAQC, aes(x = Month, y = Flowdiff_adj, color = factor(Flag_SAMP))) + geom_point(size = 2.5, alpha = 0.5) + 
+  facet_wrap(~Station) + 
+  theme_bw() + theme(axis.text = element_text(size = 14),
+                     axis.title = element_text(size =14),
+                     legend.text = element_text(size = 14),
+                     legend.title = element_text(size = 14), 
+                     strip.text = element_text(size = 15))
+
+ggplotly(outlier1b)
+```
+
+
+Recalculate Vol and CPUE
+* Should we use these to assess CPUE or do this last?
+```{r}
+FlowQAQC_to_CPUE <- FlowmeterQAQC %>%
+  mutate(Volume_adj = ifelse(FlowMeterSpeed == "Regular",
+                         Flowdiff_adj * 26873 * NetArea/999999,
+                         ifelse(FlowMeterSpeed == "Low",
+                                Flowdiff_adj * 57560 * NetArea/999999, NA))) %>%
+  mutate(CPUE_adj = round(Count/Volume_adj,3))%>%
+  arrange(Datetime)
+
+```
+
+Changes
+```{r}
+ggplot(FlowQAQC_to_CPUE, aes(x= CPUE, y = CPUE_adj)) + geom_point()
+```
+
+## QAQC: CPUE
+
+
+```{r cpueCalc}
+# Add CPUE
+NetArea = 0.4572 * 0.25
+inv_cpue <- ??
+  mutate(Volume = ifelse(FlowMeterSpeed == "Regular",
+                         Flowdiff * 26873 * NetArea/999999,
+                         ifelse(FlowMeterSpeed == "Low",
+                                Flowdiff * 57560 * NetArea/999999, NA))) 
+  filter(!is.na(Flowdiff)) %>%
+  mutate(CPUE= round(Count/Volume,3))%>%
+  arrange(Datetime)
+  
+```
+  
+Look at distribution of CPUE values
+```{r}
+FlowmeterQAQC$Month <- ordered(FlowmeterQAQC$Month)
+FlowmeterQAQC_low <- filter(FlowmeterQAQC, CPUE < 10)
+FlowmeterQAQC_high <- filter(FlowmeterQAQC, CPUE > 10)
+
+# Species
+inv_summary <-FlowmeterQAQC %>%
+  filter(WY>1998) %>%
+  group_by(Station, WYClass, Month, TaxonName) %>%
+  summarize(median.CPUE = median(CPUE),
+            max.CPUE = max(CPUE),
+            max.Count = max(Count),
+            total.CPUE = sum(CPUE),
+            n = n()) %>%
+  filter(n > 2)
+
+# Max CPUE
+species1 <- ggplot(inv_summary, aes(TaxonName, max.CPUE)) + 
+  geom_jitter(aes(col = WYClass)) + facet_grid(Station~.) + 
+    theme_bw() + theme(axis.text = element_text(size = 12),
+                      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+                     axis.title = element_text(size =14),
+                     legend.text = element_text(size = 14),
+                     legend.title = element_text(size = 14), 
+                     strip.text = element_text(size = 15))
+ggplotly(species1)
+
+# Median CPUE
+species2 <- ggplot(inv_summary, aes(TaxonName, max.CPUE)) + geom_jitter(aes(col = WYClass)) + facet_grid(Station~.) + 
+    theme_bw() + theme(axis.text = element_text(size = 12),
+                      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+                     axis.title = element_text(size =14),
+                     legend.text = element_text(size = 14),
+                     legend.title = element_text(size = 14), 
+                     strip.text = element_text(size = 15))
+ggplotly(species2)
+
+# Histogram of values
+CPUEHist <- ggplot(FlowmeterQAQC, aes(CPUE)) + geom_histogram(binwidth = 10) +
+  facet_wrap(~Station) + theme_bw()
+ggplotly(CPUEHist)
+
+CPUEHist2 <- ggplot(FlowmeterQAQC_low, aes(CPUE)) + geom_histogram(binwidth = .1) +
+  facet_wrap(~Station) + theme_bw()
+ggplotly(CPUEHist2)
+
+CPUEHist3 <- ggplot(FlowmeterQAQC_high, aes(CPUE)) + geom_histogram(binwidth = 10) +
+  facet_wrap(~Station) + theme_bw()
+ggplotly(CPUEHist3)
+
+# SHR vs STTD boxplot
+CPUEBox <- ggplot(FlowmeterQAQC) + geom_boxplot(aes(x = Station, y = CPUE)) + theme_bw()
+ggplotly(CPUEBox)
+
+# SHR vs STTD boxplot by month
+CPUEBoxMonth <- ggplot(FlowmeterQAQC) + geom_boxplot(aes(x = Month, y = CPUE, fill = Month)) + facet_wrap(~Station) + scale_fill_viridis(discrete = TRUE) + theme_bw() 
+ggplotly(CPUEBoxMonth)
+
+# SHR vs STTD boxplot by year
+CPUEBoxYear <- ggplot(FlowmeterQAQC) + geom_boxplot(aes(x = ordered(WY), y = CPUE, fill = ordered(WY))) + facet_grid(Station~.) + theme_bw() 
+ggplotly(CPUEBoxYear)
+
+# SetTime vs CPUE by station and month
+CPUEPoint <- ggplot(FlowmeterQAQC, aes(x = SetTime, y = CPUE, color = Month)) + geom_point() + facet_wrap(~Station) + theme_bw()
+ggplotly(CPUEPoint)
+
+```
+
+
+
+Look at distribution of CPUE values
+```{r}
+FlowQAQC_to_CPUE$Month <- ordered(FlowQAQC_to_CPUE$Month)
+FlowQAQC_to_CPUE_low <- filter(FlowQAQC_to_CPUE, CPUE < 10)
+FlowQAQC_to_CPUE_high <- filter(FlowQAQC_to_CPUE, CPUE > 10)
+
+# Species
+inv_summary2 <-FlowQAQC_to_CPUE %>%
+  filter(WY>1998) %>%
+  group_by(Station, WYClass, Month, TaxonName) %>%
+  summarize(median.CPUE = median(CPUE_adj),
+            max.CPUE = max(CPUE_adj),
+            max.Count = max(Count),
+            total.CPUE = sum(CPUE_adj),
+            n = n()) %>%
+  filter(n > 2)
+
+# Max CPUE
+species1b <- ggplot(inv_summary2, aes(TaxonName, max.CPUE)) + 
+  geom_jitter(aes(col = WYClass)) + facet_grid(Station~.) + 
+    theme_bw() + theme(axis.text = element_text(size = 12),
+                      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+                     axis.title = element_text(size =14),
+                     legend.text = element_text(size = 14),
+                     legend.title = element_text(size = 14), 
+                     strip.text = element_text(size = 15))
+ggplotly(species1b)
+
+# Median CPUE
+species2b <- ggplot(inv_summary, aes(TaxonName, max.CPUE)) + geom_jitter(aes(col = WYClass)) + facet_grid(Station~.) + 
+    theme_bw() + theme(axis.text = element_text(size = 12),
+                      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+                     axis.title = element_text(size =14),
+                     legend.text = element_text(size = 14),
+                     legend.title = element_text(size = 14), 
+                     strip.text = element_text(size = 15))
+ggplotly(species2b)
+
+# Histogram of values
+CPUEHistb <- ggplot(FlowQAQC_to_CPUE, aes(CPUE_adj)) + geom_histogram(binwidth = 10) +
+  facet_wrap(~Station) + theme_bw()
+ggplotly(CPUEHistb)
+
+CPUEHist2b <- ggplot(FlowQAQC_to_CPUE_low, aes(CPUE_adj)) + geom_histogram(binwidth = .1) +
+  facet_wrap(~Station) + theme_bw()
+ggplotly(CPUEHist2b)
+
+CPUEHist3b<- ggplot(FlowQAQC_to_CPUE_high, aes(CPUE_adj)) + geom_histogram(binwidth = 10) +
+  facet_wrap(~Station) + theme_bw()
+ggplotly(CPUEHist3b)
+
+# SHR vs STTD boxplot
+CPUEBoxb <- ggplot(FlowQAQC_to_CPUE) + geom_boxplot(aes(x = Station, y = CPUE_adj)) + theme_bw()
+ggplotly(CPUEBoxb)
+
+# SHR vs STTD boxplot by month
+CPUEBoxMonthb <- ggplot(FlowQAQC_to_CPUE) + geom_boxplot(aes(x = Month, y = CPUE_adj, fill = Month)) + facet_wrap(~Station) + scale_fill_viridis(discrete = TRUE) + theme_bw() 
+ggplotly(CPUEBoxMonthb)
+
+# SHR vs STTD boxplot by year
+CPUEBoxYearb <- ggplot(FlowQAQC_to_CPUE) + geom_boxplot(aes(x = ordered(WY), y = CPUE_adj, fill = ordered(WY))) + facet_grid(Station~.) + theme_bw() 
+ggplotly(CPUEBoxYearb)
+
+# SetTime vs CPUE by station and month
+CPUEPointb <- ggplot(FlowQAQC_to_CPUE, aes(x = SetTime, y = CPUE_adj, color = Month)) + geom_point() + facet_wrap(~Station) + theme_bw()
+ggplotly(CPUEPointb)
+
+```
+
+Instead of using the outlier definitions, just pick out the values that look off above? Or add "TaxonName" below
+
+
+Calculate outlier definitions
+```{r}
+### Table of values
+# Calculate median, lower and upper ranges for each day
+CPUE.sum <- FlowQAQC_to_CPUE %>%
+  group_by(StationCode, FlowMeterSpeed) %>%
+   summarize(min.CPUE = min(CPUE_adj),
+             max.CPUE = max(CPUE_adj),
+             median.CPUE = median(CPUE_adj),
+             CPUE_Q1 = quantile(CPUE_adj, probs = 0.1), 
+             CPUE_Q3 = quantile(CPUE_adj, probs = 0.9),
+             CPUE_UL = CPUE_Q3 + 1.5 * (CPUE_Q3-CPUE_Q1),
+             CPUE_MAD = mad(CPUE_adj))
+
+```
+
+Apply outlier definitions to data
+```{r}
+
+CPUE.outlier <- FlowQAQC_to_CPUE %>%
+  group_by(StationCode, FlowMeterSpeed, TaxonName) %>%
+  mutate(median.CPUE = median(CPUE_adj),
+            CPUE_Q1 = quantile(CPUE_adj, probs = 0.1), 
+            CPUE_Q3 = quantile(CPUE_adj, probs = 0.9),
+            CPUE_UL = CPUE_Q3 + 1.5 * (CPUE_Q3-CPUE_Q1),
+            CPUE_MAD = mad(CPUE_adj),
+            CPUE_modZ = abs(0.6745*(CPUE_adj - median.CPUE)/CPUE_MAD),
+            CPUE_Outlier = ifelse(CPUE_adj > CPUE_UL & CPUE_modZ > 3.5, "Both", ifelse(CPUE_adj > CPUE_UL, "Tukey", ifelse(CPUE_modZ > 3.5, "MAD", 
+            "None"))))
+
+summary(as.factor(CPUE.outlier$CPUE_Outlier))
+
+```
+
+Plot outliers
+```{r}
+outlier2a <- ggplot(CPUE.outlier, aes(x = Month, y = CPUE, color = CPUE_Outlier)) + geom_point(size = 2.5, alpha = 0.5) + facet_wrap(~Station) +   
+  theme_bw() + theme(axis.text = element_text(size = 14),
+                     axis.title = element_text(size =14),
+                     legend.text = element_text(size = 14),
+                     legend.title = element_text(size = 14), 
+                     strip.text = element_text(size = 15))
+
+ggplotly(outlier2a)
+```
+
+CPUE Flags and New CPUE calculated
+Not sure if we should do this!
+
+Flag    | Description                | Outlier                   | CPUE
+Flag 3  | Highly Suspect             | Both                      | 
+Flag 2  | Suspect                    | Tukey or MAD but not Both |  
+Flag 1  | Acceptable                 |                      |
+No Flag | Acceptable                 |
+For CPUE, all "Highly Suspect" data were replaced, so no flags of 3. This is not  
+the case for all QAQC types
+
+For flags of 2,3,5 the "Comment_CPUE" is "CPUE"
+
+```{r Flag-Replace-CPUE }
+################## Flag Flowmeter data: Flag_QC1 ############################
+# Mutate QC Flags 
+# Conditions for Flag 3: Outlier = Both | Flowdiff < 200 | Flowdiff >= 60000
+# Conditions for Flag 2: Outlier = Tukey | Outlier = MAD (but not Both) |Flowdiff between 200-999 
+# Conditions for Flag 1: Acceptable data
+
+# If Flag 3, replace Flowdiff with median.Flowdiff and replace Flag_FM as 5
+
+CPUEQAQC <- CPUE.outlier %>%
+  mutate(Flag_CPUE = ifelse(CPUE_Outlier=="Both" | CPUE_Outlier < 0 , 3, 
+                          ifelse(CPUE_Outlier %in% c("Tukey", "MAD") , 2,
+                                 1)),
+         Comment_CPUE = ifelse(Flag_CPUE !=1, "CPUE", ""),
+           CPUE_adj = ifelse(Flag_CPUE == 3 & Flag_FM == 5, CPUE_adj, CPUE))  %>%
+  mutate(Flag_CPUE = replace(Flag_CPUE, CPUE_adj != CPUE, 5))
+
+CPUEQAQC$Flag_CPUE <- ordered(CPUEQAQC$Flag_CPUE)
+```
+
+Plot changes
+```{r}
+outlier2b <- ggplot(CPUEQAQC, aes(x = Month, y = CPUE_adj, color = Flag_CPUE)) + geom_point(size = 2.5, alpha = 0.5) + facet_wrap(~Station) +   
+  theme_bw() + theme(axis.text = element_text(size = 14),
+                     axis.title = element_text(size =14),
+                     legend.text = element_text(size = 14),
+                     legend.title = element_text(size = 14), 
+                     strip.text = element_text(size = 15))
+
+ggplotly(outlier2b)
+
+
+outlier2b <- ggplot(CPUEQAQC, aes(x = Year, y = CPUE_adj, color = Flag_CPUE)) + geom_point(size = 2.5, alpha = 0.5) + facet_wrap(~Station) +   
+  theme_bw() + theme(axis.text = element_text(size = 14),
+                     axis.title = element_text(size =14),
+                     legend.text = element_text(size = 14),
+                     legend.title = element_text(size = 14), 
+                     strip.text = element_text(size = 15))
+
+ggplotly(outlier2b)
+```
+
+Join taxa
+Rearrange, rename variables
+```{r}
+
+# Rename some columns, remove unnecessary columns
+inv_select <- CPUEQAQC %>%
+  select(c(Datetime, StationCode,
+           WY, WYClass,
+           WeatherCode, Tide, MicrocystisVisualRank,
+           WaterTemperature:Turbidity,
+           ConditionCode,FieldComments, 
+           SetTime:FlowMeterEnd, Flowdiff, Flowdiff_adj, Volume,
+           LabComments, 
+           TaxonName:LifeStage, CPUE, CPUE_adj, 
+           Flag_FM, Comment_FM, Flag_SAMP, Comment_SAMP, Flag_CPUE, Comment_CPUE)) 
+
+inv_all <- left_join(inv_select, tax)
+```
+
+
+
+```{r}
+# Write File
+today = format(today(),"%Y%m%d")
+write.csv(inv_select, paste0("R_write/Drift_data_", today, ".csv"), row.names = FALSE)
+```
+
+## 5a. Public
+```{r include = FALSE, eval = FALSE}
+
 # EDI/Public
-inv_all_2$SampleDate <- format(inv_all_2$SampleDate, "%D")
+inv_final <- inv_select %>%
+  select()
 
 inv_edi_catch <- inv_all_2 %>%
   filter(StationCode %in% Yolo) %>%
@@ -160,260 +723,4 @@ inv_edi_catch <- inv_all_2 %>%
 write.csv(inv_edi_catch,"R_write/yolo_drift_public.csv")
 ```
 
-
-## 6.Overview of data: Organisms
-
-```{r Organisms Plot, echo = FALSE, message = FALSE, warning = FALSE}
-# CPUE dataframe
-zoop_cpue <- zoop_all %>%
-  gather(`150_CPUE`, `50_CPUE`, key = "NetType", value = "CPUE")
-
-# Make some datasets
-calanoid <- zoop_cpue %>% filter(Order == "Calanoida")
-cladocera <- zoop_cpue %>% filter(Order == "Cladocera")
-cyclopoid <- zoop_cpue %>% filter(Order == "Cyclopoida")
-macro <- zoop_cpue %>% filter(Classification == "Macrozooplankton")
-micro <- zoop_cpue %>% filter(Classification == "Microzooplankton & Nauplii")
-
-# Look at organisms - CPUE 
-ggplot(zoop_cpue, aes(x=Classification, y = CPUE, fill =NetType)) + 
-  geom_col(position = "dodge") +
-    scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) + labs(title = "Classification")+
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-```
-
-
-```{r Organisms Plot big, warning = FALSE, message = FALSE, fig.width=12, fig.height=16}
-
-# Look at each taxonomic category
-t1 <- ggplot(zoop_cpue, aes(x=Phylum, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="Sum CPUE by Phylum") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-t2 <- ggplot(zoop_cpue, aes(x=Class, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="Sum CPUE by Class") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-t3 <- ggplot(zoop_cpue, aes(x=Subclass, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="Sum CPUE by SubClass") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-zoop_order <- zoop_cpue %>%
-  filter(!is.na(Order))
-t4 <- ggplot(zoop_order, aes(x=Order, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="CPUE by Order") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11),axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-zoop_family <- zoop_cpue %>%
-  filter(!is.na(Family))
-t5 <- ggplot(zoop_family, aes(x=Family, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="CPUE by Family") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 9), axis.title = element_text(size = 11),axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-zoop_genus <- zoop_cpue %>%
-  filter(!is.na(Genus))
-t6 <- ggplot(zoop_genus, aes(x=Genus, y = CPUE, fill = NetType)) + geom_col(position = "dodge") + labs(title="CPUE by Genus") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 8), axis.title = element_text(size = 11),axis.title.x = element_blank(),axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-# Compare changes: Organism vs.Taxon
-# Calanoid species
-org1 <- ggplot(calanoid, aes(x=Organism, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") + labs(title = "Calanoid - Organism") +  
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-tax1 <- ggplot(calanoid, aes(x=Taxon, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") + labs(title = "Calanoid - Taxon") +  
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-# Cladocera species
-org2 <- ggplot(cladocera, aes(x=Organism, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  labs(title = "Cladocera - Organism")+
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-tax2 <- ggplot(cladocera, aes(x=Taxon, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  labs(title = "Cladocera - Taxon")+
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-# Cyclopoid species
-org3 <- ggplot(cyclopoid, aes(x=Organism, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  labs(title = "Cylopoid - Organism")+
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-tax3 <- ggplot(cyclopoid, aes(x=Taxon, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  labs(title = "Cylopoid - Taxon")+
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-# Macrozooplankton
-org4 <- ggplot(macro, aes(x=Organism, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  labs(title = "Macrozooplankton - Organism")+
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1))
-
-tax4 <- ggplot(macro, aes(x=Taxon, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  labs(title = "Macrozooplankton - Taxon")+
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1))
-
-# Microzooplankton
-org5 <- ggplot(micro, aes(x=Organism, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  labs(title = "Microzooplankton - Organism")+
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1))
-
-tax5 <- ggplot(micro, aes(x=Taxon, y = CPUE, fill = NetType)) + 
-  geom_col(position = "stack") +
-  labs(title = "Microzooplankton - Taxon")+
-  scale_fill_manual(values=c("#f0aa37", "#b3dfa2")) +
-  theme_bw() + theme(axis.text = element_text(size = 10), axis.title = element_text(size = 11), axis.title.x = element_blank(),
-                     axis.text.x = element_text(angle = 90, hjust = 1))
-
-grid.arrange(t1, t2, t3, t4, t5, t6, ncol = 2)
-grid.arrange(org1, org2, org3, org4, org5, ncol = 2)
-grid.arrange(tax1, tax2, tax3, tax4, tax5, ncol = 2)
-```
-
-## 7. Look at Flowmeter data
-
-```{r Flow, message = FALSE, warning = FALSE}
-# Calculate flow difference
-
-# Continue by combining 150-50 net into one column, then removing those rows with no flow value
-Flow <- zoop_all %>%
-    gather(`150_Flowdiff`, `50_Flowdiff`, key="NetType", value="Flowdiff") %>%
-  gather(`150_SetTime`, `50_SetTime`, key = "Net Type", value = "SetTime") %>%
-filter(!is.na(Flowdiff)) %>%
-filter(!is.na(FlowMeterSpeed))
-
-# Plot by flowmeter type
-par(mfrow = c(1,2))
-plot(Flow$Flowdiff[Flow$NetType == "150_Flowdiff"], main = "150_net") # Plot of all points
-plot(Flow$Flowdiff[Flow$NetType == "50_Flowdiff"], main = "50_net") # Plot of all points
-
-# Histogram by net type
-ggplot(Flow, aes(Flowdiff)) + geom_histogram(binwidth = 500) +
-  facet_wrap(~NetType) + theme_bw()
-
-# Looking at flow by net type and flowmeter speed
-ggplot(Flow, aes(SetTime, Flowdiff, col = FlowMeterSpeed)) + 
-  geom_point(alpha = 0.05) + 
-  facet_grid(cols = vars(NetType)) + theme_bw()
-
-# Look at flow values by month
-Flow_yr_month <- Flow %>%
-  group_by(NetType, Year, MonthAbb) %>%
-  select(NetType,Year,MonthAbb,Flowdiff) %>%
-  summarize(max.flow = max(Flowdiff),
-            median.flow = median(Flowdiff),
-            min.flow = min(Flowdiff))
-
-# Look at flow values by month
-Flow_month <- Flow %>%
-  group_by(NetType,MonthAbb) %>%
-  summarize(max.flow = max(Flowdiff),
-            median.flow = median(Flowdiff),
-            min.flow = min(Flowdiff))
-
-# Flow plots
-
-ggplot(Flow, aes(MonthAbb, Flowdiff)) + geom_boxplot(fill = "#26bb11") + labs(title = "Boxplot: All Flows") + theme_bw() + facet_wrap(~NetType)
-
-ggplot(Flow_yr_month, aes(MonthAbb, median.flow)) + geom_boxplot(fill = "#00acee") + 
-  facet_wrap(~NetType) +labs(title = "Boxplot: Median flow over multiple years") + theme_bw()
-
-# Look at flow values by station
-Flow_sta <- Flow %>%
-  group_by(StationCode, MonthAbb, NetType) %>%
-  summarize(max.flow = max(Flowdiff),
-            median.flow = median(Flowdiff),
-            min.flow = min(Flowdiff)) %>%
-  filter(StationCode %in% c("STTD", "SHR", "LIS"))
-
-# write.csv(Flow_yr_month, "R_write/Flow_yr_month.csv")
-# write.csv(Flow_sta, "R_write/Flow_sta.csv")
-# write.csv(Flow_month, "R_write/Flow_month.csv")
-
-ggplot(Flow, aes(StationCode, Flowdiff)) +geom_boxplot() + labs(title = "Flow by station") + theme_bw()
-ggplot(Flow_sta, aes(MonthAbb, median.flow, col = StationCode, shape = NetType)) + geom_point(size = 4) + theme_bw() +
-  labs(title = "Median flow by station and month")
-
-
-# List of all flow diferences by station and date
-Flow_sta_comments <- Flow %>%
-  filter(StationCode %in% c("STTD", "SHR", "LIS")) %>%
-  select(ZoopsDataID, StationCode, Year, Date, MonthAbb, NetType, Flowdiff, FieldComments) %>%
-  group_by(ZoopsDataID, StationCode, NetType,Year, Date, MonthAbb, Flowdiff, FieldComments) %>%
-  arrange(StationCode,NetType,Year,Date,Flowdiff) %>%
-  distinct(Date,StationCode)
-
-FlowMeterCheck <- zoop_all %>%
-  filter(StationCode %in% c("SHR", "STTD")) %>%
-  filter(`50_Flowdiff` < 2000) %>%
-  select(c(PhysicalDataID, ZoopsDataID, Date, StationCode, 
-           FlowMeterSpeed, Organism, `150_CPUE`, `50_CPUE`, 
-           `150_Flowdiff`, `50_Flowdiff`, `150_SetTime`, `50_SetTime`)) %>%
-  group_by(StationCode, FlowMeterSpeed) %>%
-  mutate(`150_std` = `150_Flowdiff`/`150_SetTime` *10,
-            `50_std` = `50_Flowdiff`/`50_SetTime` * 10)
-
-ggplot(FlowMeterCheck, aes(`150_std`, `50_std`, col = FlowMeterSpeed)) + geom_point() + geom_smooth() + 
-  scale_continuous + 
-  theme_bw()
-
-
-```
-
-## 8. Calculate summary stats and IQR for flowmeter readings
-```{r IQR Flowmeter}
-
-# Calculate median, MAD, lower and upper ranges for each day
-Flow.sum <- Flow %>%
-  filter(StationCode == "STTD" | StationCode == "SHR" | StationCode == "LIS") %>%
-  group_by(StationCode, NetType, FlowMeterSpeed) %>%
-   summarize(min.Flowdiff = min(Flowdiff),
-             max.Flowdiff = max(Flowdiff))
-
-# Calculate median, MAD, lower and upper ranges for each day
-Flow.IQR <- Flow %>%
-  filter(StationCode == "STTD" | StationCode == "SHR" | StationCode == "LIS") %>%
-  group_by(StationCode, NetType, FlowMeterSpeed) %>%
-   summarize(Q1 = quantile(Flowdiff, probs = 0.25), 
-            Q3 = quantile(Flowdiff, probs = 0.75),
-            IQR = Q3-Q1,
-            ul = Q3 + 1.5 * IQR,
-            ll = Q1 - 1.5 * IQR)
-kable(Flow.sum) %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
-
-kable(Flow.IQR) %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
-
-```
 
