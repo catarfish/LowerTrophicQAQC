@@ -1,0 +1,15 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+*.html
+*.csv
+
+Data
+Lisbon_data_files
+LowerTrophic_QAQC_files
+Zooplankton_QAQC_files
+R-write
+Plots
+LowerTrophic_QAQC.Rmd
