@@ -36,7 +36,7 @@ library(kableExtra)
 
 ```{r load, results = FALSE, warning = FALSE, message = FALSE}
 # Load data - several tables
-phys <- read_csv("Data/Drift/LT_phys_qc_20201125.csv")
+phys <- read_csv("Data/Drift/LT_phys_qc_20210204.csv")
 catch <- read_csv("Data/Drift/Drift_Catch_20200918.csv")
 samp <- read_csv("Data/Drift/Drift_Samplings_20200918.csv")
 tax <- read_csv("Data/Drift/Drift_Taxonomy.csv")
@@ -49,7 +49,9 @@ phys$Date<-as.Date(phys$Date,"%m/%d/%Y")
 phys$Year <- year(phys$Date)
 phys$Month <- month(phys$Date)
 phys$MonthAbb <-ordered(phys$Month,levels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
-phys$Datetime = as.POSIXct(phys$Datetime, 
+
+phys$Datetime = paste(phys$Date, phys$Time)
+phys$Datetime <- as.POSIXct(phys$Datetime, 
                            format = "%Y-%m-%d %H:%M:%S")
 catch$Time <- as.POSIXct(catch$Time,
                          format = "%m/%d/%Y %H:%M")
@@ -153,7 +155,8 @@ SamplingQAQC$Flag_SAMP <-  ""
 SamplingQAQC$Comment_SAMP <-""
 SamplingQAQC$Flag_LAB <- ""
 SamplingQAQC$Comment_LAB <- ""
-# write.csv(SamplingQAQC, "R_write/Drift/SamplingQAQC.csv")
+today <- today()
+#write.csv(SamplingQAQC, paste("R_write/Drift/SamplingQAQC_", today, ".csv"))
 
 ```
 
@@ -236,19 +239,15 @@ samp_catch_phys <- left_join(samp_catch_phys0, inundation4)
 samp_catch_phys$Month <- ordered(samp_catch_phys$Month)
 FlowHist <- ggplot(samp_catch_phys, aes(Flowdiff)) + geom_histogram() +
   facet_wrap(~Station) + theme_bw()
-ggplotly(FlowHist)
 
 # SHR vs STTD boxplot
 FlowBox <- ggplot(samp_catch_phys) + geom_boxplot(aes(x = Station, y = Flowdiff)) + theme_bw()
-ggplotly(FlowBox)
 
 # SHR vs STTD boxplot by month
 FlowBoxMonth <- ggplot(samp_catch_phys) + geom_boxplot(aes(x = Month, y = Flowdiff, fill = Month)) + facet_wrap(~Station) + scale_fill_viridis(discrete = TRUE) + theme_bw() 
-ggplotly(FlowBoxMonth)
 
 # SHR vs STTD boxplot by year
 FlowBoxYear <- ggplot(samp_catch_phys) + geom_boxplot(aes(x = ordered(WY), y = Flowdiff, fill = ordered(WY))) + facet_wrap(~Station) + theme_bw() 
-ggplotly(FlowBoxYear)
 
 # SetTime vs Flowdiff by station and month
 FlowPoint <- ggplot(samp_catch_phys, aes(x = SetTime, y = Flowdiff, color = Month)) + geom_point(size = 3) + facet_wrap(~Station) + theme_bw()
@@ -455,15 +454,15 @@ No flag| Acceptable                 | None                      | 1000-59999
 # Conditions for Flag 2: Outlier = Tukey | Outlier = MAD (but not Both) |Flowdiff between 200-999 
 # Conditions for Flag 1: Acceptable data
 
-# If Flag 3, replace Flowdiff with median.Flowdiff_s * SetTime
+# If Flag 3, calculate Flowdiff_adj = median.Flowdiff_s * SetTime
 
 FlowmeterQAQC <- Flow.outlier %>%
-  filter(!is.na(Flowdiff)) %>%
+  filter(!is.na(Flowdiff), Flow_modZ>=0.00000001) %>%
   mutate(Flag_FM = ifelse(Flow_Outlier=="Both" | Flowdiff < 200 | (Flowdiff >= 50000 & Inundation2 ==FALSE) | Flowdiff >= 70000 , 3, 
                           ifelse(Flow_Outlier %in% c("Tukey", "MAD") | Flowdiff < 1000, 2,
                                  "")),
          Comment_FM = ifelse(Flag_FM %in% c(2,3), "FM", ""),
-         Flowdiff_adj = ifelse(Flow_s_MAD < 0.1, Flowdiff, ifelse(Flag_FM == 3 | Comment_SAMP == "FM", median.Flowdiff_s * SetTime, Flowdiff)))
+         Flowdiff_adj = ifelse(Flag_FM == 3 | Comment_SAMP == "FM", median.Flowdiff_s * SetTime, Flowdiff))
 ```
 
 
@@ -554,11 +553,9 @@ FlowQAQC_high <- filter(FlowQAQC_CPUE, CPUE > 10)
 # Histogram of values
 CPUEHist <- ggplot(FlowQAQC_CPUE, aes(CPUE_adj)) + geom_histogram(binwidth = 1) +
   facet_wrap(~Station) + theme_bw()
-ggplotly(CPUEHist)
 
 # SHR vs STTD boxplot
 CPUEBox <- ggplot(FlowQAQC_CPUE) + geom_boxplot(aes(x = Station, y = CPUE_adj)) + theme_bw()
-ggplotly(CPUEBox)
 
 # SHR vs STTD boxplot by month
 CPUEBoxMonth <- ggplot(FlowQAQC_CPUE) + geom_boxplot(aes(x = Month, y = CPUE_adj, color = Month)) + facet_wrap(~Station) + scale_color_viridis(discrete = TRUE) + theme_bw() 
@@ -574,7 +571,7 @@ grid.arrange(CPUEBoxMonth, CPUEBoxYear)
 ```
 
 CPUE and Count Plots
-```{r}
+```{r fig.width = 10, fig.height = 8}
 # Species
 inv_summary <-FlowQAQC_CPUE %>%
   filter(WY>1998) %>%
@@ -655,7 +652,7 @@ checkCounts <- filter(FlowQAQC_CPUE, Count>1000)
 # Match up with datasheet 
 
 checkCPUE <- filter(FlowQAQC_CPUE, CPUE_adj > 100)
-
+checkCPUE2 <- filter(FlowQAQC_CPUE, is.na(CPUE_adj))
 ```
 
 28. Look at summary table of CPUE values
@@ -667,6 +664,7 @@ CPUE.outlier <- FlowQAQC_CPUE %>%
             CPUE_Q1 = quantile(CPUE_adj, probs = 0.1), 
             CPUE_Q3 = quantile(CPUE_adj, probs = 0.9),
             CPUE_UL = CPUE_Q3 + 1.5 * (CPUE_Q3-CPUE_Q1))
+
 
 ```
 
@@ -716,7 +714,7 @@ inv_select <- CPUEQAQC %>%
            SetTime:FlowMeterEnd, Flowdiff, Flowdiff_adj, Volume, Volume_adj,
            LabComments, 
            TaxonName:LifeStage, CPUE, CPUE_adj, 
-           Flag_SAMP, Comment_SAMP, Flag_LAB, Comment_LAB, Flag_FM, Comment_FM, Flag_CPUE, Comment_CPUE)) 
+           Flag_PQC, Comment_PQC, Flag_SAMP, Comment_SAMP, Flag_LAB, Comment_LAB, Flag_FM, Comment_FM, Flag_CPUE, Comment_CPUE)) 
 
 inv_all <- left_join(inv_select, tax)
 ```
@@ -749,7 +747,7 @@ print(paste0(round(nrow(threes)/nrow(inv_final)*100,3), "% highly suspicious"))
 ```{r}
 # Write File
 today = format(today(),"%Y%m%d")
-write.csv(inv_final, paste0("R_write/Drift_data_", today, ".csv"), row.names = FALSE)
+write.csv(inv_final, paste0("R_write/Drift/Drift_data_", today, ".csv"), row.names = FALSE)
 ```
 
 36. Write R-markdown file
