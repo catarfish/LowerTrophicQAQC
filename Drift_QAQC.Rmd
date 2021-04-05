@@ -506,7 +506,7 @@ No flag| Acceptable                 | None                      | 1000-59999
 # Conditions for Flag 2: Outlier = Tukey | Outlier = MAD (but not Both) |Flowdiff between 200-999 
 # Conditions for Flag 1: Acceptable data
 
-# If Flag 3, calculate Flowdiff_adj = median.Flowdiff_s * SetTime
+# If Flag 3, calculate FlowdiffAdj = median.Flowdiff_s * SetTime
 
 FlowmeterQAQC <- Flow.outlier %>%
   filter(!is.na(Flowdiff), Flow_modZ>=0.00000001) %>%
@@ -514,7 +514,7 @@ FlowmeterQAQC <- Flow.outlier %>%
                           ifelse(Flow_Outlier %in% c("Tukey", "MAD") | Flowdiff < 1000, 2,
                                  "")),
          Comment_FM = ifelse(Flag_FM %in% c(2,3), "FM", ""),
-         Flowdiff_adj = ifelse(Flag_FM == 3 | Comment_SAMP == "FM", median.Flowdiff_s * SetTime, Flowdiff))
+         FlowdiffAdj = ifelse(Flag_FM == 3 | Comment_SAMP == "FM", median.Flowdiff_s * SetTime, Flowdiff))
 ```
 
 
@@ -542,7 +542,7 @@ outlierPreFlow <- ggplot(FlowmeterQAQC, aes(x = factor(Month), y = Flowdiff,  te
 
 ggplotly(outlierPreFlow)
 
-outlierPostFlow <- ggplot(FlowmeterQAQC, aes(x = factor(Month), y = Flowdiff_adj, color = factor(Flag_FM))) + geom_point(size = 2.5, alpha = 0.5) + scale_color_viridis(discrete = TRUE)  + labs(title = "Flowmeter Post-QC") +
+outlierPostFlow <- ggplot(FlowmeterQAQC, aes(x = factor(Month), y = FlowdiffAdj, color = factor(Flag_FM))) + geom_point(size = 2.5, alpha = 0.5) + scale_color_viridis(discrete = TRUE)  + labs(title = "Flowmeter Post-QC") +
   facet_wrap(~Station) +   
   theme_bw() + theme(axis.text = element_text(size = 14),
                      axis.title = element_text(size =14),
@@ -563,7 +563,7 @@ outlierPreSamp <- ggplot(Flow.outlier, aes(x = factor(Month), y = Flowdiff, colo
                      legend.title = element_text(size = 14), 
                      strip.text = element_text(size = 15))
 
-outlierPostSamp <- ggplot(FlowmeterQAQC, aes(x = factor(Month), y = Flowdiff_adj, color = factor(Flag_SAMP))) + geom_point(size = 3, alpha = 0.8) + scale_color_viridis(discrete = TRUE) + labs(title = "Sampling Post-QC") +
+outlierPostSamp <- ggplot(FlowmeterQAQC, aes(x = factor(Month), y = FlowdiffAdj, color = factor(Flag_SAMP))) + geom_point(size = 3, alpha = 0.8) + scale_color_viridis(discrete = TRUE) + labs(title = "Sampling Post-QC") +
   facet_wrap(~Station) + 
   theme_bw() + theme(axis.text = element_text(size = 14),
                      axis.title = element_text(size =14),
@@ -590,9 +590,9 @@ FlowQAQC_CPUE <- FlowmeterQAQC %>%
   mutate(CPUE= round(Count/Volume,3))%>%
     
   mutate(VolumeAdj = ifelse(FlowMeterSpeed == "Regular",
-                         Flowdiff_adj * 26873 * NetArea/999999,
+                         FlowdiffAdj * 26873 * NetArea/999999,
                          ifelse(FlowMeterSpeed == "Low",
-                                Flowdiff_adj * 57560 * NetArea/999999, NA))) %>%
+                                FlowdiffAdj * 57560 * NetArea/999999, NA))) %>%
   mutate(CPUEAdj = round(Count/VolumeAdj,3))%>%
   arrange(Datetime)
 
@@ -778,7 +778,7 @@ inv_select <- CPUEQAQC %>%
            WeatherCode, Tide, MicrocystisVisualRank,
            WaterTemperature:Turbidity,
            ConditionCode,FieldComments, 
-           SetTime:FlowMeterEnd, Flowdiff, Flowdiff_adj, Volume, VolumeAdj,
+           SetTime:FlowMeterEnd, Flowdiff, FlowdiffAdj, Volume, VolumeAdj,
            LabComments, 
            Category, TaxonName, LifeStage, Count, CPUE, CPUEAdj, 
            FlagPhys, CommentPhys, FlagSamp, CommentSamp, FlagLab, CommentLab, FlagFM, CommentFM, FlagCPUE, CommentCPUE)) 
