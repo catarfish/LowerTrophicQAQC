@@ -38,7 +38,9 @@ library(kableExtra)
 # Load data - several tables
 phys <- read_csv("Data/Drift/LT_phys_qc_20210204.csv")
 catch <- read_csv("Data/Drift/Drift_Catch_20200918.csv")
+catch2 <- read_csv("Data/Drift/Drift_Catch_Contractor_20210330.csv")
 samp <- read_csv("Data/Drift/Drift_Samplings_20200918.csv")
+samp2 <- read_csv("Data/Drift/Drift_Sampling_Access_20210330.csv")
 tax <- read_csv("Data/Drift/Drift_Taxonomy.csv")
 wy <- read_csv("Data/WaterYearType_CDEC.csv") 
 inundation <- read_csv("Data/Inundation_1998_2021.csv")
@@ -55,10 +57,16 @@ phys$Datetime <- as.POSIXct(phys$Datetime,
                            format = "%Y-%m-%d %H:%M:%S")
 catch$Time <- as.POSIXct(catch$Time,
                          format = "%m/%d/%Y %H:%M")
-# Add and change date formats
 samp$Date<-as.Date(samp$Date,"%m/%d/%Y")
 samp$`Date/Time` = as.POSIXct(samp$`Date/Time`, 
                            format = "%m/%d/%Y %H:%M:%S")
+catch2$Date <- as.Date(catch2$Date, "%m/%d/%Y")
+catch2$Time <- strptime(catch2$Time, format = "%H:%M:%S") %>%
+  strftime(catch2$Time, format = "%H:%M:%S")
+catch2$Datetime = paste(catch2$Date, catch2$Time)
+catch2$Datetime <- as.POSIXct(catch2$Datetime, 
+                           format = "%Y-%m-%d %H:%M:%S")
+
 inundation$Date<-as.Date(inundation$Date,"%m/%d/%Y")
 str(phys)
 str(catch)
@@ -66,6 +74,9 @@ str(catch)
 
 3.Rename variables
 ```{r filter, results = FALSE, message = FALSE, warning = FALSE}
+phys <- phys %>%
+  rename(Station = StationCode)
+
 catch <- catch %>%
   mutate(SamplingID = str_extract(`Sampling number`, "[^/]+")) %>%
   rename(Datetime = Time,
@@ -88,6 +99,19 @@ samp <- samp %>%
   select(-`Invertebrate Catch ID`)
 samp$SamplingID <- as.numeric(samp$SamplingID)
 summary(samp)
+
+catch2 <- catch2 %>%
+  rename(Count = Individuals,
+         Category = `Insect/Non-Insect`,
+         LifeStage = Stage,
+         TaxonName = Name) %>%
+  select(-c("Number", "Time"))
+
+samp2 <- samp2 %>%
+  rename(FlowMeterStart = DriftStartMeter,
+         FlowMeterEnd = DriftEndMeter) %>%
+  select(-c("StartTime", "StopTime"))
+
 ```
 
 4. Make changes already identified
@@ -100,25 +124,52 @@ summary(samp)
 ```{r merge, message = FALSE, warning = FALSE}
 # Merge datasets for CPUE variables
 # tax <- full_join(inv_tax, inv_tax_2, by = "OrganismID")
-samp_catch <- left_join(samp, catch, by = c("SamplingID")) %>%
-  rename(Station = Station.x,
-         Datetime = Datetime.x) %>%
-  select(-c(Station.y, Datetime.y))
+samp_catch <- left_join(samp, catch, by = c("SamplingID", "Station")) %>%
+  rename(Datetime = Datetime.x) %>%
+  select(-c(Datetime.y))
 
 # Merge physical data
 samp_catch_phys0 <- left_join(phys, samp_catch, by = "PhysicalDataID") %>%
-  rename(Date = Date.x,
+  rename(Station = Station.x,
+         Date = Date.x,
          Time = Time.x,
          Datetime = Datetime.x) %>%
-  select(-c(Date.y, Time.y, Datetime.y)) %>%
-  filter(!is.na(Station)) 
+  select(-c(Station.y, Date.y, Time.y, Datetime.y)) %>%
+ filter(!is.na(Station)) %>%
+  filter(Date < "2019-04-22") 
 notjoinedPhysDataID <- anti_join(phys, samp_catch, by = "PhysicalDataID")
 
+# For second part 2019, merge phys-samp, then add catch.
+# For the additional data
+phys_samp <- left_join(phys, samp2, by = c("PhysicalDataID")) %>%
+  filter(Date > "2019-04-16" & Date < "2020-01-01") %>%
+  mutate(SamplingID = "N/A") 
+
+phys_samp_catch0 <- left_join(phys_samp, catch2, by = c("Datetime", "Date", "Station")) %>%
+    select(c(PhysicalDataID:Comment_PQC, SamplingID, InvertDataID:SetTime, FlowMeterSpeed, FlowMeterStart, FlowMeterEnd, LabComments, FieldComments, TaxonName, Count, Category, LifeStage))
+
+sampcatchphysMerge <- rbind(samp_catch_phys0, phys_samp_catch0) 
+
+# All samplings - remove catch info and find unique entries
+sampUnique <- sampcatchphysMerge %>%
+  select(-c(WeatherCode:Turbidity, Year:Comment_PQC,  LabComments, TaxonName:LifeStage)) %>%
+  unique() %>%
+  arrange(Datetime)
+
+```
+
+
+```{r}
+# In the future, figure out what to do with lab comments, which for drift are at the observable level. If they never include lab comments relative to sample quality, leave these out. If they are included, need to add !is.na(LabComments to the SamplingQAQC command.)
+sampA <- sampcatchphysMerge %>%
+  select(-c(WeatherCode:Turbidity, Year:Comment_PQC,  TaxonName:LifeStage)) %>%
+  unique() %>%
+  arrange(Datetime)
 ```
 
 Add Water Year and Water Year "Class" (W = W, D/C = D, AN/BN = A), calculate Flowdiff
 ```{r}
-samp_catch_phys0 <- samp_catch_phys0 %>%
+samp_catch_physMerge <- sampcatchphysMerge %>%
   mutate(WY = ifelse(Month >9, Year + 1, Year)) %>%
   left_join(wy, by = "WY") %>%
   select(-c(Index, WYType)) %>%
@@ -150,7 +201,7 @@ samp_catch_phys0 <- samp_catch_phys0 %>%
 * This part is manual. Think about how to make this codeable, change our condition code flags or add a flag as part of data entry? 
 
 ```{r}
-SamplingQAQC <- filter(samp, !is.na(FieldComments) | ConditionCode>1)
+SamplingQAQC <- filter(sampUnique, !is.na(FieldComments) | ConditionCode>1 )
 SamplingQAQC$Flag_SAMP <-  ""
 SamplingQAQC$Comment_SAMP <-""
 SamplingQAQC$Flag_LAB <- ""
@@ -163,7 +214,7 @@ today <- today()
 12. Read edited file in
 
 ```{r}
-SamplingQAQC_fill <- read.csv("R_write/Drift/SamplingQAQC_Notated_20210112.csv")
+SamplingQAQC_fill <- read.csv("R_write/Drift/SamplingQAQC_Notated_20210330.csv")
 SamplingQAQC_fill_s <- SamplingQAQC_fill %>%
   select(c(PhysicalDataID, Flag_SAMP, Comment_SAMP, Flag_LAB, Comment_LAB))
 ```
@@ -184,12 +235,12 @@ inundation <- inundation %>%
          WY = ifelse(Month > 9, Year + 1, Year))
 
 # Modify sample table to include Flowdiff
-samp2 <-samp %>%
+samp3 <-sampUnique %>%
   mutate(Flowdiff = FlowMeterEnd-FlowMeterStart,
-         Flowdiff_s = Flowdiff/SetTime)
+         Flowdiff_s = Flowdiff/SetTime) 
 
 # merged inundation and sampling
-inundation_flow <- left_join(samp2, inundation, by = "Date") %>%
+inundation_flow <- left_join(samp3, inundation, by = "Date") %>%
     filter(Flowdiff<100000) %>%
   filter(Station == "STTD") %>%
   mutate(Flowdiff_s = Flowdiff/SetTime,
@@ -224,12 +275,12 @@ inplot3 <- ggplot() +
 grid.arrange(inplot1, inplot2, inplot3, nrow = 3)
 
 
-# Allow  2 days after last "inundation=TRUE" to also count as inundated. Merge with sample data. 
+# Allow 10 days after last "inundation=TRUE" to also count as inundated. Merge with sample data. 
 inundation4 <- inundation %>%
-  mutate(Inundation2 = ifelse(lead(Inundation, 2) == "TRUE", "TRUE", Inundation)) %>%
+  mutate(Inundation2 = ifelse(lead(Inundation, 10) == "TRUE", "TRUE", Inundation)) %>%
   select(c(Date, Month:Inundation2))
 
-samp_catch_phys <- left_join(samp_catch_phys0, inundation4)
+samp_catch_phys <- left_join(samp_catch_physMerge, inundation4)
 
 ```
 
@@ -270,6 +321,10 @@ samp_catch_phys$FlowMeterStart[samp_catch_phys$SamplingID==47736] <- 573926
 samp_catch_phys$FlowMeterEnd[samp_catch_phys$SamplingID==47736] <- 581200
 samp_catch_phys$Flowdiff[samp_catch_phys$SamplingID==47736] <- 581200-573926
 
+samp3$FlowMeterStart[samp3$SamplingID==47736] <- 573926
+samp3$FlowMeterEnd[samp3$SamplingID==47736] <- 581200
+samp3$Flowdiff[samp3$SamplingID==47736] <- 581200-573926
+
 ```
 
 16. Merge data with lab/sampling QAQC 
@@ -282,22 +337,20 @@ FM_Samp <- left_join(samp_catch_phys, SamplingQAQC_fill_s, by = "PhysicalDataID"
          Comment_LAB = replace(Comment_LAB, is.na(Comment_LAB), ""))
 ```
 
-17. Make a table of summarized flowmeter values
+17. Make a table of summarized flowmeter values for different conditions
     * Use Flowdiff/Settime to look for outliers
     * Use inundation as a grouping variable for STTD but not SHR
-    
     
 STTD
 ```{r message = FALSE, warning = FALSE}
 ### Table of values
 # Calculate median, lower and upper ranges for each day
-Flow.sum.STTD <- samp2 %>%
+Flow.sum.STTD <- samp3 %>%
   left_join(inundation4) %>%
   left_join(wy)%>%
-  rename(StationCode = Station) %>%
-  filter(!is.na(Flowdiff), !is.na(Inundation2), StationCode=="STTD") %>%
+  filter(!is.na(Flowdiff), !is.na(Inundation2), Station=="STTD") %>%
   mutate(Flow_s = Flowdiff/SetTime) %>%
-  group_by(StationCode, FlowMeterSpeed, WYClass, Inundation2) %>%
+  group_by(Station, FlowMeterSpeed, WYClass, Inundation2) %>%
   summarize(n= n(),
             min.Flowdiff = min(Flowdiff),
             max.Flowdiff = max(Flowdiff),
@@ -323,13 +376,12 @@ Flow.sum.STTD %>%
 
 Sherwood
 ```{r message = FALSE, warning = FALSE}
-Flow.sum.SHR <- samp2 %>%
+Flow.sum.SHR <- samp3 %>%
   left_join(inundation4) %>%
   left_join(wy)%>%
-  rename(StationCode = Station) %>%
   mutate(Flow_s = Flowdiff/SetTime) %>%
-  group_by(StationCode, FlowMeterSpeed, WYClass) %>%
-  filter(!is.na(Flowdiff), StationCode == "SHR") %>%
+  group_by(Station, FlowMeterSpeed, WYClass) %>%
+  filter(!is.na(Flowdiff), Station == "SHR") %>%
   summarize(n= n(),
             min.Flowdiff = min(Flowdiff),
             max.Flowdiff = max(Flowdiff),
@@ -358,8 +410,8 @@ Flow.sum.SHR %>%
 ```{r}
 Flow.outlier.STTD <- left_join(FM_Samp, Flow.sum.STTD) %>%
     mutate(Flow_s = Flowdiff/SetTime) %>%
-  filter(!is.na(Flowdiff), !is.na(Inundation2), StationCode=="STTD") %>%
-  group_by(StationCode, FlowMeterSpeed, WYClass) %>%
+  filter(!is.na(Flowdiff), !is.na(Inundation2), Station=="STTD") %>%
+  group_by(Station, FlowMeterSpeed, WYClass) %>%
   mutate(Flow_modZ = abs(0.6745*(Flow_s - median.Flowdiff_s)/Flow_s_MAD),
          Flow_Outlier = ifelse((Flow_s > Flow_UL) & Flow_modZ > 3.5, "Both", ifelse(Flow_s > Flow_UL, "Tukey", ifelse(Flow_modZ > 3.5, "MAD", 
             "None"))))
@@ -368,8 +420,8 @@ summary(factor(Flow.outlier.STTD$Flow_Outlier))
 
 Flow.outlier.SHR <- left_join(FM_Samp, Flow.sum.SHR) %>%
   mutate(Flow_s = Flowdiff/SetTime) %>%
-  filter(!is.na(Flowdiff),  StationCode=="SHR") %>%
-  group_by(StationCode, FlowMeterSpeed, WYClass) %>%
+  filter(!is.na(Flowdiff),  Station=="SHR") %>%
+  group_by(Station, FlowMeterSpeed, WYClass) %>%
   mutate(Flow_modZ = abs(0.6745*(Flow_s - median.Flowdiff_s)/Flow_s_MAD),
          Flow_Outlier = ifelse((Flow_s > Flow_UL) & Flow_modZ > 3.5, "Both", ifelse(Flow_s > Flow_UL, "Tukey", ifelse(Flow_modZ > 3.5, "MAD", 
             "None"))))
@@ -469,9 +521,11 @@ FlowmeterQAQC <- Flow.outlier %>%
 Summarize number of outliers flagged
 ```{r}
 FlowmeterQAQC$Flag_FM <- ordered(FlowmeterQAQC$Flag_FM)
-
+print("Flowmeter Outliers")
 summary(factor(FlowmeterQAQC$Flag_FM))
+print("Sampling Outliers")
 summary(factor(FlowmeterQAQC$Flag_SAMP))
+print("Lab Outliers")
 summary(factor(FlowmeterQAQC$Flag_LAB))
 ```
 
@@ -655,16 +709,19 @@ checkCPUE <- filter(FlowQAQC_CPUE, CPUE_adj > 100)
 checkCPUE2 <- filter(FlowQAQC_CPUE, is.na(CPUE_adj))
 ```
 
-28. Look at summary table of CPUE values
+28. Look at summary table of adjusted CPUE values
 ```{r}
 ### Table of values
-CPUE.outlier <- FlowQAQC_CPUE %>%
-  group_by(StationCode, FlowMeterSpeed, WYClass, TaxonName) %>%
-  mutate(median.CPUE = median(CPUE_adj),
-            CPUE_Q1 = quantile(CPUE_adj, probs = 0.1), 
-            CPUE_Q3 = quantile(CPUE_adj, probs = 0.9),
-            CPUE_UL = CPUE_Q3 + 1.5 * (CPUE_Q3-CPUE_Q1))
+CPUE.adj.table <- FlowQAQC_CPUE %>%
+  group_by(Station, FlowMeterSpeed, WYClass, TaxonName) %>%
+  summarize(min.CPUE = min(CPUE_adj),
+            median.CPUE = median(CPUE_adj),
+            max.CPUE = max(CPUE_adj),
+            n = n())
 
+CPUE.adj.table %>%
+    kbl() %>%
+  kable_styling()
 
 ```
 
@@ -673,7 +730,7 @@ CPUE.outlier <- FlowQAQC_CPUE %>%
 
 30. Add comment about what was flagged (Comment_CPUE = CPUE)
 ```{r}
-CPUEQAQC <- CPUE.outlier %>%
+CPUEQAQC <- FlowQAQC_CPUE %>%
   mutate(Flag_CPUE = ifelse(CPUE_adj>70, 2, "" ),
          Comment_CPUE = ifelse(CPUE_adj>70, "CPUE", ""))
 ```
@@ -706,16 +763,17 @@ grid.arrange(outlier2a, outlier2b)
 # Rename some columns, remove unnecessary columns
 inv_select <- CPUEQAQC %>%
   rename(Inundation = Inundation2) %>%
-  select(c(Datetime, StationCode,
+  select(c(Datetime, Station,
            WY, WYClass, Inundation,
            WeatherCode, Tide, MicrocystisVisualRank,
            WaterTemperature:Turbidity,
            ConditionCode,FieldComments, 
            SetTime:FlowMeterEnd, Flowdiff, Flowdiff_adj, Volume, Volume_adj,
            LabComments, 
-           TaxonName:LifeStage, CPUE, CPUE_adj, 
+           Category, TaxonName, TaxonRank, LifeStage, Count, CPUE, CPUE_adj, 
            Flag_PQC, Comment_PQC, Flag_SAMP, Comment_SAMP, Flag_LAB, Comment_LAB, Flag_FM, Comment_FM, Flag_CPUE, Comment_CPUE)) 
 
+# Join taxa table with the rest of the data
 inv_all <- left_join(inv_select, tax)
 ```
 
@@ -729,7 +787,7 @@ empty_as_na <- function(x){
 inv_final <- inv_select %>%
   mutate_each(list(empty_as_na), Flag_SAMP:Comment_CPUE) %>%
   mutate(QC_Flags = paste(Flag_SAMP, ",", Flag_LAB, ",", Flag_FM, ",", Flag_CPUE)) %>%
-  mutate(QC_Comments = paste(Comment_SAMP, ",", Comment_LAB, ",", Comment_CPUE))
+  mutate(QC_Comments = paste(Comment_SAMP, ",", Comment_LAB, ",",Comment_FM, ",",  Comment_CPUE))
 
 ## Filter rows with a 7
 threes <- inv_final%>%
