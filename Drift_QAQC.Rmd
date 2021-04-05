@@ -577,7 +577,7 @@ grid.arrange(outlierPreSamp, outlierPostSamp, nrow = 2)
 
 ## QAQC: CPUE
 
-25. Calculate Vol and CPUE, Vol_adj, CPUE_adj
+25. Calculate Vol and CPUE, Vol_adj, CPUEAdj
 
 ```{r}
 NetArea = 0.4572 * 0.25
@@ -589,11 +589,11 @@ FlowQAQC_CPUE <- FlowmeterQAQC %>%
   filter(!is.na(Flowdiff)) %>%
   mutate(CPUE= round(Count/Volume,3))%>%
     
-  mutate(Volume_adj = ifelse(FlowMeterSpeed == "Regular",
+  mutate(VolumeAdj = ifelse(FlowMeterSpeed == "Regular",
                          Flowdiff_adj * 26873 * NetArea/999999,
                          ifelse(FlowMeterSpeed == "Low",
                                 Flowdiff_adj * 57560 * NetArea/999999, NA))) %>%
-  mutate(CPUE_adj = round(Count/Volume_adj,3))%>%
+  mutate(CPUEAdj = round(Count/VolumeAdj,3))%>%
   arrange(Datetime)
 
 ```
@@ -605,19 +605,19 @@ FlowQAQC_low <- filter(FlowQAQC_CPUE, CPUE < 10)
 FlowQAQC_high <- filter(FlowQAQC_CPUE, CPUE > 10)
 
 # Histogram of values
-CPUEHist <- ggplot(FlowQAQC_CPUE, aes(CPUE_adj)) + geom_histogram(binwidth = 1) +
+CPUEHist <- ggplot(FlowQAQC_CPUE, aes(CPUEAdj)) + geom_histogram(binwidth = 1) +
   facet_wrap(~Station) + theme_bw()
 
 # SHR vs STTD boxplot
-CPUEBox <- ggplot(FlowQAQC_CPUE) + geom_boxplot(aes(x = Station, y = CPUE_adj)) + theme_bw()
+CPUEBox <- ggplot(FlowQAQC_CPUE) + geom_boxplot(aes(x = Station, y = CPUEAdj)) + theme_bw()
 
 # SHR vs STTD boxplot by month
-CPUEBoxMonth <- ggplot(FlowQAQC_CPUE) + geom_boxplot(aes(x = Month, y = CPUE_adj, color = Month)) + facet_wrap(~Station) + scale_color_viridis(discrete = TRUE) + theme_bw() 
+CPUEBoxMonth <- ggplot(FlowQAQC_CPUE) + geom_boxplot(aes(x = Month, y = CPUEAdj, color = Month)) + facet_wrap(~Station) + scale_color_viridis(discrete = TRUE) + theme_bw() 
 
 grid.arrange(CPUEHist, CPUEBox)
 
 # SHR vs STTD boxplot by year
-CPUEBoxYear <- ggplot(FlowQAQC_CPUE) + geom_boxplot(aes(x = factor(WY), y = CPUE_adj)) + facet_grid(Station~.) + theme_bw() 
+CPUEBoxYear <- ggplot(FlowQAQC_CPUE) + geom_boxplot(aes(x = factor(WY), y = CPUEAdj)) + facet_grid(Station~.) + theme_bw() 
 ggplotly(CPUEBoxYear)
 
 grid.arrange(CPUEBoxMonth, CPUEBoxYear)
@@ -630,16 +630,16 @@ CPUE and Count Plots
 inv_summary <-FlowQAQC_CPUE %>%
   filter(WY>1998) %>%
   group_by(Station, WYClass, TaxonName) %>%
-  summarize(median.CPUE = median(CPUE_adj),
-            max.CPUE = max(CPUE_adj),
+  summarize(median.CPUE = median(CPUEAdj),
+            max.CPUE = max(CPUEAdj),
             max.Count = max(Count),
             median.Count = median(Count),
-            total.CPUE = sum(CPUE_adj),
+            total.CPUE = sum(CPUEAdj),
             n = n()) %>%
   filter(n > 2)
 
 # All CPUE
-speciesCPUE <- ggplot(FlowQAQC_CPUE, aes(TaxonName, CPUE_adj)) + 
+speciesCPUE <- ggplot(FlowQAQC_CPUE, aes(TaxonName, CPUEAdj)) + 
   geom_jitter(aes(col = WYClass)) + facet_grid(Station~.) + 
   scale_color_viridis(discrete=TRUE) +
     theme_bw() + theme(axis.text = element_text(size = 12),
@@ -705,8 +705,8 @@ ggplotly(maxCount)
 checkCounts <- filter(FlowQAQC_CPUE, Count>1000)
 # Match up with datasheet 
 
-checkCPUE <- filter(FlowQAQC_CPUE, CPUE_adj > 100)
-checkCPUE2 <- filter(FlowQAQC_CPUE, is.na(CPUE_adj))
+checkCPUE <- filter(FlowQAQC_CPUE, CPUEAdj > 100)
+checkCPUE2 <- filter(FlowQAQC_CPUE, is.na(CPUEAdj))
 ```
 
 28. Look at summary table of adjusted CPUE values
@@ -714,9 +714,9 @@ checkCPUE2 <- filter(FlowQAQC_CPUE, is.na(CPUE_adj))
 ### Table of values
 CPUE.adj.table <- FlowQAQC_CPUE %>%
   group_by(Station, FlowMeterSpeed, WYClass, TaxonName) %>%
-  summarize(min.CPUE = min(CPUE_adj),
-            median.CPUE = median(CPUE_adj),
-            max.CPUE = max(CPUE_adj),
+  summarize(min.CPUE = min(CPUEAdj),
+            median.CPUE = median(CPUEAdj),
+            max.CPUE = max(CPUEAdj),
             n = n())
 
 CPUE.adj.table %>%
@@ -731,8 +731,8 @@ CPUE.adj.table %>%
 30. Add comment about what was flagged (Comment_CPUE = CPUE)
 ```{r}
 CPUEQAQC <- FlowQAQC_CPUE %>%
-  mutate(Flag_CPUE = ifelse(CPUE_adj>70, 2, "" ),
-         Comment_CPUE = ifelse(CPUE_adj>70, "CPUE", ""))
+  mutate(Flag_CPUE = ifelse(CPUEAdj>70, 2, "" ),
+         Comment_CPUE = ifelse(CPUEAdj>70, "CPUE", ""))
 ```
 
 31. Plot outliers
@@ -744,7 +744,7 @@ outlier2a <- ggplot(CPUEQAQC, aes(x = Month, y = CPUE, color = Flag_FM)) + geom_
                      legend.title = element_text(size = 14), 
                      strip.text = element_text(size = 15))
 
-outlier2b <- ggplot(CPUEQAQC, aes(x = Month, y = CPUE_adj, color = Flag_CPUE)) + geom_point(size = 2.5, alpha = 0.5) + scale_color_viridis(discrete = "TRUE") + facet_wrap(~Station) +   labs(title = "CPUE calculated with adjusted Flowmeter values + CPUE flags") + 
+outlier2b <- ggplot(CPUEQAQC, aes(x = Month, y = CPUEAdj, color = Flag_CPUE)) + geom_point(size = 2.5, alpha = 0.5) + scale_color_viridis(discrete = "TRUE") + facet_wrap(~Station) +   labs(title = "CPUE calculated with adjusted Flowmeter values + CPUE flags") + 
   theme_bw() + theme(axis.text = element_text(size = 14),
                      axis.title = element_text(size =14),
                      legend.text = element_text(size = 14),
@@ -762,19 +762,34 @@ grid.arrange(outlier2a, outlier2b)
 ```{r}
 # Rename some columns, remove unnecessary columns
 inv_select <- CPUEQAQC %>%
-  rename(Inundation = Inundation2) %>%
+  dplyr::rename(Inundation = Inundation2,
+         FlagPhys = Flag_PQC,
+         FlagSamp = Flag_SAMP,
+         FlagLab = Flag_LAB,
+         FlagFM = Flag_FM, 
+         FlagCPUE = Flag_CPUE,
+         CommentPhys = Comment_PQC,
+         CommentSamp = Comment_SAMP,
+         CommentLab = Comment_LAB,
+         CommentFM = Comment_FM,
+         CommentCPUE = Comment_CPUE) %>%
   select(c(Datetime, Station,
            WY, WYClass, Inundation,
            WeatherCode, Tide, MicrocystisVisualRank,
            WaterTemperature:Turbidity,
            ConditionCode,FieldComments, 
-           SetTime:FlowMeterEnd, Flowdiff, Flowdiff_adj, Volume, Volume_adj,
+           SetTime:FlowMeterEnd, Flowdiff, Flowdiff_adj, Volume, VolumeAdj,
            LabComments, 
-           Category, TaxonName, TaxonRank, LifeStage, Count, CPUE, CPUE_adj, 
-           Flag_PQC, Comment_PQC, Flag_SAMP, Comment_SAMP, Flag_LAB, Comment_LAB, Flag_FM, Comment_FM, Flag_CPUE, Comment_CPUE)) 
+           Category, TaxonName, LifeStage, Count, CPUE, CPUEAdj, 
+           FlagPhys, CommentPhys, FlagSamp, CommentSamp, FlagLab, CommentLab, FlagFM, CommentFM, FlagCPUE, CommentCPUE)) 
 
 # Join taxa table with the rest of the data
 inv_all <- left_join(inv_select, tax)
+
+# Rearrange 
+inv_arrange <- inv_all %>% 
+  select(c(Datetime:Turbidity, SetTime:VolumeAdj, ConditionCode:FieldComments, LabComments:Category, OrganismID, TaxonRank, TaxonName, LifeStage:CommentCPUE))
+
 ```
 
 33. Merge flags and commments into one flag, one comment column, replace "" with NA
@@ -784,14 +799,25 @@ empty_as_na <- function(x){
     ifelse(as.character(x)!="", x, NA)
 }
 
-inv_final <- inv_select %>%
-  mutate_each(list(empty_as_na), Flag_SAMP:Comment_CPUE) %>%
-  mutate(QC_Flags = paste(Flag_SAMP, ",", Flag_LAB, ",", Flag_FM, ",", Flag_CPUE)) %>%
-  mutate(QC_Comments = paste(Comment_SAMP, ",", Comment_LAB, ",",Comment_FM, ",",  Comment_CPUE))
+inv_final <- inv_arrange %>%
+  mutate(LifeStage = replace(LifeStage, LifeStage == "N/A", NA)) %>%
+  mutate(across(c(FlagSamp:CommentCPUE), list(empty_as_na)) ) %>%
+  select(-c(FlagSamp:CommentCPUE)) %>%
+  rename(FlagSamp = FlagSamp_1, 
+         FlagLab = FlagLab_1,
+         FlagFM = FlagFM_1,
+         FlagCPUE = FlagCPUE_1,
+         CommentSamp = CommentSamp_1, 
+         CommentLab = CommentLab_1,
+         CommentFM = CommentFM_1,
+         CommentCPUE = CommentCPUE_1) %>%
+  mutate(QCFlags = paste(FlagSamp, ",", FlagLab, ",", FlagFM, ",", FlagCPUE)) %>%
+  mutate(QCComments = paste(CommentSamp, ",", CommentLab, ",",CommentFM, ",",  CommentCPUE))
+
 
 ## Filter rows with a 7
 threes <- inv_final%>%
-  filter(grepl("3", QC_Flags ))
+  filter(grepl("3", QCFlags ))
 ```
 
 34. Calculate proportion of data flagged
