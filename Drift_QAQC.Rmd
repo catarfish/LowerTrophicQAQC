@@ -1,7 +1,7 @@
 ---
 title: "Drift_QAQC"
 author: "Catarina Pien"
-date: "September 18, 2020"
+date: "April 20, 2020"
 output: html_document
 editor_options: 
   chunk_output_type: console
@@ -317,13 +317,23 @@ grid.arrange(FlowPoint, FlowPoint2)
 # Change known incorrect values
 # Change FlowMeterStart and FlowMeterEnd, Recalculate Flowdiff
 # SamplingID = 47736 Switched FlowMeterStart and FlowMeterEnd 
+check <- samp_catch_phys %>% filter(Flowdiff < 0)
+
 samp_catch_phys$FlowMeterStart[samp_catch_phys$SamplingID==47736] <- 573926
 samp_catch_phys$FlowMeterEnd[samp_catch_phys$SamplingID==47736] <- 581200
 samp_catch_phys$Flowdiff[samp_catch_phys$SamplingID==47736] <- 581200-573926
 
+samp_catch_phys$FlowMeterStart[samp_catch_phys$InvertDataID==978] <- 788767
+samp_catch_phys$FlowMeterEnd[samp_catch_phys$InvertDataID==978] <- 	795100
+samp_catch_phys$Flowdiff[samp_catch_phys$InvertDataID==978] <- 795100-788767
+
 samp3$FlowMeterStart[samp3$SamplingID==47736] <- 573926
 samp3$FlowMeterEnd[samp3$SamplingID==47736] <- 581200
 samp3$Flowdiff[samp3$SamplingID==47736] <- 581200-573926
+
+samp3$FlowMeterStart[samp3$InvertDataID==978] <- 788767
+samp3$FlowMeterEnd[samp3$InvertDataID==978] <- 	795100
+samp3$Flowdiff[samp3$InvertDataID==978] <- 795100-788767
 
 ```
 
@@ -710,7 +720,7 @@ checkCPUE2 <- filter(FlowQAQC_CPUE, is.na(CPUEAdj))
 ```
 
 28. Look at summary table of adjusted CPUE values
-```{r}
+```{r, eval = FALSE}
 ### Table of values
 CPUE.adj.table <- FlowQAQC_CPUE %>%
   group_by(Station, FlowMeterSpeed, WYClass, TaxonName) %>%
@@ -783,8 +793,16 @@ inv_select <- CPUEQAQC %>%
            Category, TaxonName, LifeStage, Count, CPUE, CPUEAdj, 
            FlagPhys, CommentPhys, FlagSamp, CommentSamp, FlagLab, CommentLab, FlagFM, CommentFM, FlagCPUE, CommentCPUE)) 
 
+# Modify some taxa to join correctly
+inv_select$TaxonName[inv_select$TaxonName == "affinis"]  <- "Gambusia affinis" 
+inv_select$TaxonName[inv_select$TaxonName == "Hydrachnidae"]  <- "Hydrachnidia" 
+inv_select$LifeStage[inv_select$TaxonName == "Actinopterygii - eggs"]  <- "eggs"
+inv_select$TaxonName[inv_select$TaxonName == "Actinopterygii - eggs"]  <- "Actinopterygii" 
+
+
 # Join taxa table with the rest of the data
-inv_all <- left_join(inv_select, tax)
+inv_all <- left_join(inv_select, tax) %>%
+  filter(!is.na(TaxonName))
 
 # Rearrange 
 inv_arrange <- inv_all %>% 
@@ -811,9 +829,8 @@ inv_final <- inv_arrange %>%
          CommentLab = CommentLab_1,
          CommentFM = CommentFM_1,
          CommentCPUE = CommentCPUE_1) %>%
-  mutate(QCFlags = paste(FlagSamp, ",", FlagLab, ",", FlagFM, ",", FlagCPUE)) %>%
-  mutate(QCComments = paste(CommentSamp, ",", CommentLab, ",",CommentFM, ",",  CommentCPUE))
-
+  mutate(QCFlags = paste(FlagSamp, " ", FlagLab, " ", FlagFM, " ", FlagCPUE)) %>%
+  mutate(QCComments = paste(CommentSamp, " ", CommentLab, " ",CommentFM, " ",  CommentCPUE))
 
 ## Filter rows with a 7
 threes <- inv_final%>%
@@ -828,10 +845,12 @@ print(paste0(round(nrow(threes)/nrow(inv_final)*100,3), "% highly suspicious"))
 
 35. Write file
 
-```{r}
+```{r, eval = FALSE}
 # Write File
+# quote = TRUE important for EML writing
 today = format(today(),"%Y%m%d")
-write.csv(inv_final, paste0("R_write/Drift/Drift_data_", today, ".csv"), row.names = FALSE)
+write.csv(inv_final, paste0("R_write/Drift/Drift_data_", today, ".csv"), row.names = FALSE, quote = TRUE)
+
 ```
 
 36. Write R-markdown file

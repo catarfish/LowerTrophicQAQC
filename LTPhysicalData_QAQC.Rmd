@@ -7,7 +7,10 @@ editor_options:
   chunk_output_type: console
 ---
 ```{r set-options, echo=FALSE, cache=FALSE}
+```
 
+
+```{r set-options, echo=FALSE, cache=FALSE}
 options(fig.width = 12)
 rm(list=ls(all=TRUE))
 ```
@@ -145,7 +148,7 @@ PlotVars <- function(data,y) {
 
 ```{r load, results = FALSE, warning = FALSE, message = FALSE}
 #setwd("C:/Users/cpien/OneDrive - California Department of Water Resources/Work/Database/R_code/")
-phys <- read.csv("Data/TblPhysicalData.csv")
+phys <- read.csv("Data/TblPhysicalData_20210204.csv")
 
 # Add and change data and time formats
 phys <- phys %>% mutate(Datetime = paste(Date, Time, sep = " "))
@@ -523,9 +526,9 @@ phys_yolo %>%
 
 ### 13. Flag Data
 * Flag data 
-* 7: Replaced (above changes, mostly typos)
-* 3: Suspect data, based on plots, but not out of the realm of possibility, not confirmed in field data
-* 1: Pass
+* 3: Replaced (above changes, mostly typos)
+* 2: Suspect data, based on plots, but not out of the realm of possibility, not confirmed in field data
+* blank: Pass
 * Include comment to say which variable is flagged/replaced.
 ```{r Flag, message = FALSE, warning = FALSE}
 # Lists for flags and flag comments
@@ -546,8 +549,8 @@ ph <- c(1501)
 
 # Adding Flag and Comment variables
 phys_yolo_flag <- phys_yolo %>%
-  mutate(Flag_PQC = ifelse(PhysicalDataID %in% modified, 7,
-                           ifelse(PhysicalDataID %in% flag, 3, 1)),
+  mutate(Flag_PQC = ifelse(PhysicalDataID %in% modified, 3,
+                           ifelse(PhysicalDataID %in% flag, 2, "")),
          Comment_PQC = ifelse(PhysicalDataID %in% wtemp, "WTEMP",
                               ifelse(PhysicalDataID %in% turb, "TURB",
                                      ifelse(PhysicalDataID %in% cond, "COND",
@@ -589,7 +592,7 @@ grid.arrange(p.temp, p.ec, p.spc, p.secchi, p.turb, p.do, p.pH, ncol = 2)
 
 ```
 
-### 15. Write file
+### 15. Replace blanks
 ```{r Write file, message = FALSE, warning = FALSE}
 
 # Replace blanks with NA
@@ -601,8 +604,14 @@ empty_as_na <- function(x){
 phys_yolo_flag <- phys_yolo_flag %>%
   mutate_each(list(empty_as_na),5:20)
 
-# Write cleaned up file to be used later (merged with zooplankton, etc.)
-write.csv(phys_yolo_flag, "Data/LT_phys_qc.csv")
+
 ```
 
+
+```{r, eval = FALSE}
+# Write cleaned up file to be used later (merged with zooplankton, etc.)
+today = format(today(),"%Y%m%d")
+write.csv(phys_yolo_flag, paste0("R_write/LT_phys_qc_", today, ".csv"), row.names = FALSE)
+
+```
 
